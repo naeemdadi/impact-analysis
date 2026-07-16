@@ -2,26 +2,51 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "../storage/db.js";
 import { graphFileTable, graphImportTable, graphSnapshotTable, graphSymbolTable } from "../storage/schema.js";
-import type { BaselineGraph, BaselineBuildResult } from "./types.js";
+import { CURRENT_GRAPH_SCHEMA_VERSION, type BaselineGraph, type BaselineBuildResult } from "./types.js";
+
+export interface SnapshotBuildMetadata {
+  buildMode: "full" | "incremental" | "full_fallback";
+  baseSnapshotId?: string | null;
+  changedFileCount?: number;
+  reanalyzedFileCount?: number;
+  fallbackReason?: string | null;
+}
 
 export async function createBuildingSnapshot(input: {
   repoId: number;
   branch: string;
   sha: string;
+  metadata?: SnapshotBuildMetadata;
 }): Promise<string> {
   const existing = await db
-    .select({ id: graphSnapshotTable.id })
+    .select({ id: graphSnapshotTable.id, status: graphSnapshotTable.status })
     .from(graphSnapshotTable)
     .where(
       and(
         eq(graphSnapshotTable.repoId, input.repoId),
         eq(graphSnapshotTable.branch, input.branch),
         eq(graphSnapshotTable.commitSha, input.sha),
+        eq(graphSnapshotTable.graphSchemaVersion, CURRENT_GRAPH_SCHEMA_VERSION),
       ),
     )
     .limit(1);
   if (existing.length > 0) {
-    throw new Error(`baseline snapshot already exists for repo ${input.repoId}, branch ${input.branch}, SHA ${input.sha}`);
+    if (existing[0].status !== "failed") {
+      throw new Error(`baseline snapshot already exists for repo ${input.repoId}, branch ${input.branch}, SHA ${input.sha}`);
+    }
+    // Failed snapshots contain no trustworthy graph. Reusing their identity permits a safe later recovery.
+    await db.transaction(async (transaction) => {
+      await transaction.delete(graphImportTable).where(eq(graphImportTable.snapshotId, existing[0].id));
+      await transaction.delete(graphSymbolTable).where(eq(graphSymbolTable.snapshotId, existing[0].id));
+      await transaction.delete(graphFileTable).where(eq(graphFileTable.snapshotId, existing[0].id));
+      await transaction.update(graphSnapshotTable).set({
+        status: "building", failureReason: null, completedAt: null, buildDurationMs: null,
+        buildMode: input.metadata?.buildMode ?? "full", baseSnapshotId: input.metadata?.baseSnapshotId ?? null,
+        changedFileCount: input.metadata?.changedFileCount ?? 0, reanalyzedFileCount: input.metadata?.reanalyzedFileCount ?? 0,
+        fallbackReason: input.metadata?.fallbackReason ?? null,
+      }).where(eq(graphSnapshotTable.id, existing[0].id));
+    });
+    return existing[0].id;
   }
 
   const rows = await db
@@ -31,6 +56,12 @@ export async function createBuildingSnapshot(input: {
       branch: input.branch,
       commitSha: input.sha,
       status: "building",
+      graphSchemaVersion: CURRENT_GRAPH_SCHEMA_VERSION,
+      buildMode: input.metadata?.buildMode ?? "full",
+      baseSnapshotId: input.metadata?.baseSnapshotId ?? null,
+      changedFileCount: input.metadata?.changedFileCount ?? 0,
+      reanalyzedFileCount: input.metadata?.reanalyzedFileCount ?? 0,
+      fallbackReason: input.metadata?.fallbackReason ?? null,
     })
     .returning({ id: graphSnapshotTable.id });
   return rows[0].id;
@@ -47,11 +78,17 @@ export async function findReadySnapshotByIdentity(input: {
       repoId: graphSnapshotTable.repoId,
       branch: graphSnapshotTable.branch,
       sha: graphSnapshotTable.commitSha,
+      graphSchemaVersion: graphSnapshotTable.graphSchemaVersion,
       fileCount: graphSnapshotTable.fileCount,
       symbolCount: graphSnapshotTable.symbolCount,
       importCount: graphSnapshotTable.importCount,
       unresolvedImportCount: graphSnapshotTable.unresolvedImportCount,
       buildDurationMs: graphSnapshotTable.buildDurationMs,
+      buildMode: graphSnapshotTable.buildMode,
+      baseSnapshotId: graphSnapshotTable.baseSnapshotId,
+      changedFileCount: graphSnapshotTable.changedFileCount,
+      reanalyzedFileCount: graphSnapshotTable.reanalyzedFileCount,
+      fallbackReason: graphSnapshotTable.fallbackReason,
     })
     .from(graphSnapshotTable)
     .where(
@@ -59,6 +96,7 @@ export async function findReadySnapshotByIdentity(input: {
         eq(graphSnapshotTable.repoId, input.repoId),
         eq(graphSnapshotTable.branch, input.branch),
         eq(graphSnapshotTable.commitSha, input.sha),
+        eq(graphSnapshotTable.graphSchemaVersion, CURRENT_GRAPH_SCHEMA_VERSION),
         eq(graphSnapshotTable.status, "ready"),
       ),
     )
@@ -68,7 +106,13 @@ export async function findReadySnapshotByIdentity(input: {
   return {
     ...row,
     status: "ready",
+    graphSchemaVersion: row.graphSchemaVersion,
     buildDurationMs: row.buildDurationMs ?? 0,
+    buildMode: row.buildMode as BaselineBuildResult["buildMode"],
+    baseSnapshotId: row.baseSnapshotId,
+    changedFileCount: row.changedFileCount,
+    reanalyzedFileCount: row.reanalyzedFileCount,
+    fallbackReason: row.fallbackReason,
   };
 }
 
@@ -79,6 +123,7 @@ export async function persistReadySnapshot(input: {
   sha: string;
   graph: BaselineGraph;
   buildDurationMs: number;
+  metadata?: SnapshotBuildMetadata;
 }): Promise<BaselineBuildResult> {
   const unresolvedImportCount = input.graph.imports.filter((entry) => entry.resolutionStatus === "unresolved").length;
 
@@ -152,11 +197,42 @@ export async function persistReadySnapshot(input: {
     branch: input.branch,
     sha: input.sha,
     status: "ready",
+    graphSchemaVersion: CURRENT_GRAPH_SCHEMA_VERSION,
     fileCount: input.graph.files.length,
     symbolCount: input.graph.symbols.length,
     importCount: input.graph.imports.length,
     unresolvedImportCount,
     buildDurationMs: input.buildDurationMs,
+    buildMode: input.metadata?.buildMode ?? "full",
+    baseSnapshotId: input.metadata?.baseSnapshotId ?? null,
+    changedFileCount: input.metadata?.changedFileCount ?? 0,
+    reanalyzedFileCount: input.metadata?.reanalyzedFileCount ?? 0,
+    fallbackReason: input.metadata?.fallbackReason ?? null,
+  };
+}
+
+export async function loadReadyGraphByIdentity(input: { repoId: number; branch: string; sha: string }): Promise<{ snapshotId: string; graph: BaselineGraph } | null> {
+  const snapshot = await findReadySnapshotByIdentity(input);
+  if (!snapshot) return null;
+  const files = await db.select().from(graphFileTable).where(eq(graphFileTable.snapshotId, snapshot.snapshotId));
+  const pathsById = new Map(files.map((file) => [file.id, file.path]));
+  const symbols = await db.select().from(graphSymbolTable).where(eq(graphSymbolTable.snapshotId, snapshot.snapshotId));
+  const imports = await db.select().from(graphImportTable).where(eq(graphImportTable.snapshotId, snapshot.snapshotId));
+  return {
+    snapshotId: snapshot.snapshotId,
+    graph: {
+      files: files.map((file) => ({ path: file.path, blobSha: file.blobSha, kind: file.kind as BaselineGraph["files"][number]["kind"], classificationReason: file.classificationReason })),
+      symbols: symbols.map((symbol) => ({
+        filePath: pathsById.get(symbol.fileId)!, symbolKey: symbol.symbolKey, name: symbol.name,
+        kind: symbol.kind as BaselineGraph["symbols"][number]["kind"], isExported: symbol.isExported,
+        startLine: symbol.startLine, startColumn: symbol.startColumn, endLine: symbol.endLine, endColumn: symbol.endColumn, sourceHash: symbol.sourceHash,
+      })),
+      imports: imports.map((entry) => ({
+        fromPath: pathsById.get(entry.fromFileId)!, toPath: entry.toFileId ? pathsById.get(entry.toFileId)! : null,
+        specifier: entry.specifier, kind: entry.kind as BaselineGraph["imports"][number]["kind"],
+        resolutionStatus: entry.resolutionStatus as BaselineGraph["imports"][number]["resolutionStatus"], unresolvedReason: entry.unresolvedReason,
+      })),
+    },
   };
 }
 
@@ -169,6 +245,13 @@ export async function markSnapshotFailed(snapshotId: string, reason: string, bui
       buildDurationMs,
       completedAt: new Date(),
     })
+    .where(eq(graphSnapshotTable.id, snapshotId));
+}
+
+export async function markSnapshotUnsupported(snapshotId: string, reason: string, buildDurationMs: number): Promise<void> {
+  await db
+    .update(graphSnapshotTable)
+    .set({ status: "unsupported", failureReason: reason, buildDurationMs, completedAt: new Date() })
     .where(eq(graphSnapshotTable.id, snapshotId));
 }
 
@@ -192,7 +275,11 @@ export async function loadReadySnapshot(snapshotId: string): Promise<{
       importCount: graphSnapshotTable.importCount,
     })
     .from(graphSnapshotTable)
-    .where(and(eq(graphSnapshotTable.id, snapshotId), eq(graphSnapshotTable.status, "ready")))
+    .where(and(
+      eq(graphSnapshotTable.id, snapshotId),
+      eq(graphSnapshotTable.status, "ready"),
+      eq(graphSnapshotTable.graphSchemaVersion, CURRENT_GRAPH_SCHEMA_VERSION),
+    ))
     .limit(1);
   if (rows.length === 0) throw new Error(`ready snapshot not found: ${snapshotId}`);
   return rows[0];

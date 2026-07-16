@@ -88,6 +88,12 @@ Build first graph snapshot for the tracked branch.
 
 ## Phase 3: Incremental Graph Updates on Push
 
+### Status
+
+- Implementation complete and local migration applied
+- Automated incremental graph behavior covered by fixture tests
+- Live GitHub push acceptance remains to be run against the installed test repository
+
 ### Goal
 
 Keep baseline graph fresh with minimal compute.

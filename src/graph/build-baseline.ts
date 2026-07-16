@@ -1,8 +1,9 @@
-import { buildBaselineGraph } from "./baseline-graph-builder.js";
+import { buildBaselineGraph, UnsupportedRepositoryError } from "./baseline-graph-builder.js";
 import {
   createBuildingSnapshot,
   findReadySnapshotByIdentity,
   markSnapshotFailed,
+  markSnapshotUnsupported,
   persistReadySnapshot,
 } from "./snapshot-repository.js";
 import { getRepoConfig, updateRepoIdentity } from "../storage/repo-config-repo.js";
@@ -63,10 +64,17 @@ export async function buildAndPersistBaselineGraph(
       sha,
       graph,
       buildDurationMs: Date.now() - startedAt,
+      metadata: {
+        buildMode: request.buildMetadata?.buildMode ?? "full",
+        changedFileCount: request.buildMetadata?.changedFileCount ?? 0,
+        reanalyzedFileCount: graph.files.length,
+        fallbackReason: request.buildMetadata?.fallbackReason ?? null,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown baseline graph build error";
-    await markSnapshotFailed(snapshotId, message, Date.now() - startedAt);
+    if (error instanceof UnsupportedRepositoryError) await markSnapshotUnsupported(snapshotId, message, Date.now() - startedAt);
+    else await markSnapshotFailed(snapshotId, message, Date.now() - startedAt);
     throw error;
   }
 }

@@ -52,8 +52,18 @@ export const graphSnapshotTable = pgTable(
     // Build lifecycle: building while incomplete, ready when valid, failed when no trustworthy graph was produced.
     status: text("status").notNull(),
     // Version of the persisted graph format, allowing future readers to reject incompatible snapshots.
-    graphSchemaVersion: integer("graph_schema_version").notNull().default(1),
-    // Number of TypeScript/TSX files successfully stored in this snapshot.
+    graphSchemaVersion: integer("graph_schema_version").notNull().default(2),
+    // How this snapshot was produced: a complete build, a partial recomputation, or its safe fallback.
+    buildMode: text("build_mode").notNull().default("full"),
+    // Ready snapshot used as the immutable source for an incremental build; null for a full build.
+    baseSnapshotId: uuid("base_snapshot_id"),
+    // Number of paths reported by GitHub as changed for this commit transition.
+    changedFileCount: integer("changed_file_count").notNull().default(0),
+    // Number of source files parsed again for this snapshot.
+    reanalyzedFileCount: integer("reanalyzed_file_count").notNull().default(0),
+    // Why a full fallback was selected instead of incremental analysis, if applicable.
+    fallbackReason: text("fallback_reason"),
+    // Number of analyzed code and style files successfully stored in this snapshot.
     fileCount: integer("file_count").notNull().default(0),
     // Number of top-level function, class, variable, or component symbols stored in this snapshot.
     symbolCount: integer("symbol_count").notNull().default(0),
@@ -71,8 +81,8 @@ export const graphSnapshotTable = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    // Enforces one immutable baseline graph for a repository, tracked branch, and exact commit.
-    uniqueIndex("graph_snapshot_repo_branch_sha_unique").on(table.repoId, table.branch, table.commitSha),
+    // Enforces one immutable graph format version for a repository, tracked branch, and exact commit.
+    uniqueIndex("graph_snapshot_repo_branch_sha_schema_unique").on(table.repoId, table.branch, table.commitSha, table.graphSchemaVersion),
   ],
 );
 
@@ -90,7 +100,7 @@ export const graphFileTable = pgTable(
     path: text("path").notNull(),
     // Git blob SHA proving the exact file content observed during this snapshot build.
     blobSha: text("blob_sha").notNull(),
-    // Deterministic role: page, api_route, component, shared_module, or unknown.
+    // Deterministic role: route entrypoint, component, style, tooling, shared module, or unknown fallback.
     kind: text("kind").notNull(),
     // Explicit filesystem/AST rule that produced kind; used as report evidence rather than inference.
     classificationReason: text("classification_reason").notNull(),
@@ -154,15 +164,15 @@ export const graphImportTable = pgTable(
     fromFileId: bigint("from_file_id", { mode: "number" })
       .notNull()
       .references(() => graphFileTable.id),
-    // Resolved local target file; null for external packages and unresolved local imports.
+    // Resolved local graph target; null for external packages, static assets outside the graph, and unresolved imports.
     toFileId: bigint("to_file_id", { mode: "number" }).references(() => graphFileTable.id),
     // Literal source specifier, for example @/lib/discount or ../components/Button.
     specifier: text("specifier").notNull(),
     // Import form: static, dynamic import(), or type_only.
     kind: text("kind").notNull(),
-    // Resolution result: resolved, unresolved, or external package.
+    // Resolution result: resolved graph edge, unresolved, external package, or local asset outside the graph.
     resolutionStatus: text("resolution_status").notNull(),
-    // Why a local import could not resolve; null for resolved and external imports.
+    // Why a local import could not resolve; null for resolved, external, and known asset imports.
     unresolvedReason: text("unresolved_reason"),
   },
   (table) => [

@@ -9,6 +9,7 @@ const pushPayloadSchema = z.object({
   ref: z.string(),
   before: z.string(),
   after: z.string(),
+  deleted: z.boolean().optional(),
   repository: z.object({
     id: z.number(),
     default_branch: z.string(),
@@ -69,6 +70,7 @@ export async function handlePushEvent(payload: unknown, context: PushEventContex
       branch: pushedBranch,
       beforeSha: parsed.before,
       afterSha: parsed.after,
+      deleted: parsed.deleted ?? false,
     },
   });
 
