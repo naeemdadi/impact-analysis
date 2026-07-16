@@ -1,0 +1,48 @@
+{
+  "name": "impact-analysis",
+  "version": "1.0.0",
+  "description": "Impact Analysis GitHub App backend skeleton",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server/index.ts",
+    "start": "tsx src/server/index.ts",
+    "webhook:proxy": "smee -u https://smee.io/JFKHpA4hx8mOXsPL -t http://localhost:3000/webhooks/github",
+    "test": "tsx --test scripts/phase1.acceptance.test.ts",
+    "test:phase2": "tsx --test scripts/phase2.graph.test.ts",
+    "worker": "tsx src/worker/index.ts",
+    "set-tracked-branch": "tsx scripts/update-tracked-branch.ts",
+    "db:docker:up": "docker compose up -d postgres",
+    "db:docker:down": "docker compose down",
+    "db:docker:logs": "docker compose logs -f postgres",
+    "db:docker:init": "./scripts/db-docker-init.sh",
+    "db:generate": "pnpm exec drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "pnpm exec drizzle-kit migrate --config=drizzle.config.ts",
+    "db:check": "pnpm exec drizzle-kit check --config=drizzle.config.ts",
+    "db:studio": "pnpm exec drizzle-kit studio --config=drizzle.config.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@octokit/app": "^16.1.2",
+    "@octokit/webhooks": "^14.2.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "pg": "^8.22.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.1",
+    "drizzle-kit": "0.31.10",
+    "smee-client": "^5.0.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.1",
+    "typescript": "5.9.3"
+  }
+}

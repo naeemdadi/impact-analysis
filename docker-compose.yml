@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18.4-alpine3.24
+    container_name: impact-analysis-postgres
+    environment:
+      POSTGRES_DB: impact_analysis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_pg18:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d impact_analysis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres_data_pg18:

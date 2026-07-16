@@ -1,0 +1,1 @@
+ALTER TABLE "repo_config" ADD COLUMN "access_state" text DEFAULT 'active' NOT NULL;
