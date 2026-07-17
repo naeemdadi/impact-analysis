@@ -1,5 +1,3 @@
-export const CURRENT_GRAPH_SCHEMA_VERSION = 2;
-
 export type GraphFileKind =
   | "page"
   | "api_route"
@@ -103,7 +101,6 @@ export interface BaselineBuildResult {
   branch: string;
   sha: string;
   status: "ready";
-  graphSchemaVersion: number;
   fileCount: number;
   symbolCount: number;
   importCount: number;
@@ -121,6 +118,11 @@ export interface IncrementalGraphUpdateRequest {
   branch: string;
   beforeSha: string;
   afterSha: string;
+}
+
+export interface SupersededGraphUpdateResult {
+  status: "superseded";
+  liveSha: string;
 }
 
 export interface RepositoryReader {

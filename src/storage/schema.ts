@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
@@ -35,11 +36,12 @@ export const repoConfigTable = pgTable("repo_config", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Immutable baseline graph metadata for one repository branch commit.
+// Immutable build metadata for one repository branch commit. Fact tables below
+// belong only to the snapshot currently selected for that repository branch.
 export const graphSnapshotTable = pgTable(
   "graph_snapshot",
   {
-    // Internal immutable snapshot identifier; referenced by all graph facts below.
+    // Internal snapshot identifier; referenced by the current mutable graph facts.
     id: uuid("id").primaryKey().defaultRandom(),
     // Installed GitHub repository whose source graph this snapshot represents.
     repoId: bigint("repo_id", { mode: "number" })
@@ -51,12 +53,12 @@ export const graphSnapshotTable = pgTable(
     commitSha: text("commit_sha").notNull(),
     // Build lifecycle: building while incomplete, ready when valid, failed when no trustworthy graph was produced.
     status: text("status").notNull(),
-    // Version of the persisted graph format, allowing future readers to reject incompatible snapshots.
-    graphSchemaVersion: integer("graph_schema_version").notNull().default(2),
     // How this snapshot was produced: a complete build, a partial recomputation, or its safe fallback.
     buildMode: text("build_mode").notNull().default("full"),
-    // Ready snapshot used as the immutable source for an incremental build; null for a full build.
+    // Previous current snapshot used as the source for an incremental build; null for a full build.
     baseSnapshotId: uuid("base_snapshot_id"),
+    // True only for the snapshot currently represented by the mutable graph fact tables for this branch.
+    isCurrent: boolean("is_current").notNull().default(false),
     // Number of paths reported by GitHub as changed for this commit transition.
     changedFileCount: integer("changed_file_count").notNull().default(0),
     // Number of source files parsed again for this snapshot.
@@ -81,18 +83,20 @@ export const graphSnapshotTable = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    // Enforces one immutable graph format version for a repository, tracked branch, and exact commit.
-    uniqueIndex("graph_snapshot_repo_branch_sha_schema_unique").on(table.repoId, table.branch, table.commitSha, table.graphSchemaVersion),
+    // Enforces one snapshot metadata record for a repository, tracked branch, and exact commit.
+    uniqueIndex("graph_snapshot_repo_branch_sha_unique").on(table.repoId, table.branch, table.commitSha),
+    // A branch has one materialized graph. Historical snapshot rows remain metadata only.
+    uniqueIndex("graph_snapshot_current_branch_unique").on(table.repoId, table.branch).where(sql`"is_current" = true`),
   ],
 );
 
-// Source file facts belonging to one immutable graph snapshot.
+// Current mutable source-file facts for a repository branch.
 export const graphFileTable = pgTable(
   "graph_file",
   {
     // Internal file-row identifier used by symbol and import foreign keys.
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    // Immutable snapshot that owns this file fact.
+    // Current snapshot that owns this fact. Ownership moves forward on each successful build.
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => graphSnapshotTable.id),
@@ -106,7 +110,7 @@ export const graphFileTable = pgTable(
     classificationReason: text("classification_reason").notNull(),
   },
   (table) => [
-    // A repository path can appear only once in one immutable snapshot.
+    // A repository path can appear only once in the current materialized graph.
     uniqueIndex("graph_file_snapshot_path_unique").on(table.snapshotId, table.path),
   ],
 );
@@ -117,7 +121,7 @@ export const graphSymbolTable = pgTable(
   {
     // Internal symbol-row identifier.
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    // Immutable snapshot that owns this symbol fact.
+    // Current snapshot that owns this symbol fact.
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => graphSnapshotTable.id),
@@ -145,7 +149,7 @@ export const graphSymbolTable = pgTable(
     sourceHash: text("source_hash").notNull(),
   },
   (table) => [
-    // Prevents conflicting symbol facts for the same logical symbol in one snapshot.
+    // Prevents conflicting symbol facts for the same logical symbol in the current graph.
     uniqueIndex("graph_symbol_snapshot_key_unique").on(table.snapshotId, table.symbolKey),
   ],
 );
@@ -156,7 +160,7 @@ export const graphImportTable = pgTable(
   {
     // Internal import-edge identifier.
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    // Immutable snapshot that owns this dependency edge.
+    // Current snapshot that owns this dependency edge.
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => graphSnapshotTable.id),
@@ -180,6 +184,65 @@ export const graphImportTable = pgTable(
     index("graph_import_snapshot_from_file_idx").on(table.snapshotId, table.fromFileId),
     // Supports reverse traversal: which files depend on this file? No duplicate reverse rows are stored.
     index("graph_import_snapshot_to_file_idx").on(table.snapshotId, table.toFileId),
+  ],
+);
+
+// One durable deterministic analysis result for a PR head commit. Phase 5 reads
+// this evidence; it does not need to rebuild or infer the impact graph.
+export const prAnalysisTable = pgTable(
+  "pr_analysis",
+  {
+    // Internal analysis-run identifier.
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Repository and GitHub PR number that own this analysis.
+    repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
+    pullRequestNumber: integer("pull_request_number").notNull(),
+    // Exact source pair used as deterministic evidence.
+    baseSha: text("base_sha").notNull(),
+    headSha: text("head_sha").notNull(),
+    // building, ready, insufficient_evidence, or failed.
+    status: text("status").notNull(),
+    // high, medium, or low when analysis is ready; null otherwise.
+    impactLevel: text("impact_level"),
+    // Validated deterministic result payload consumed by Phase 5.
+    resultJson: jsonb("result_json").$type<Record<string, unknown>>(),
+    // Deterministic insufficiency or operational failure reason.
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Repeated webhook deliveries for the same PR head reuse one analysis result.
+    uniqueIndex("pr_analysis_repo_pr_head_unique").on(table.repoId, table.pullRequestNumber, table.headSha),
+    index("pr_analysis_repo_pr_status_idx").on(table.repoId, table.pullRequestNumber, table.status),
+  ],
+);
+
+// Rendered deterministic report for one PR analysis. Phase 6 reads this row to
+// deliver a comment without recomputing graph facts or calling an LLM again.
+export const prReportTable = pgTable(
+  "pr_report",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    prAnalysisId: uuid("pr_analysis_id").notNull().references(() => prAnalysisTable.id),
+    // building or ready; a model failure still produces a ready fallback report.
+    status: text("status").notNull(),
+    confidence: text("confidence").notNull(),
+    evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>().notNull(),
+    selectionJson: jsonb("selection_json").$type<Record<string, unknown>>().notNull(),
+    markdown: text("markdown").notNull(),
+    model: text("model"),
+    providerResponseId: text("provider_response_id"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    // not_requested for insufficient evidence, completed, or fallback.
+    llmStatus: text("llm_status").notNull(),
+    llmError: text("llm_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("pr_report_analysis_unique").on(table.prAnalysisId),
   ],
 );
 

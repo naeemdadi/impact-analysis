@@ -11,6 +11,8 @@
     "test": "tsx --test scripts/phase1.acceptance.test.ts",
     "test:phase2": "tsx --test scripts/phase2.graph.test.ts scripts/phase2.correctness.test.ts",
     "test:phase3": "tsx --test scripts/phase3.incremental-graph.test.ts",
+    "test:phase4": "tsx --test scripts/phase4.pr-impact.test.ts",
+    "test:phase5": "tsx --test scripts/phase5.report.test.ts",
     "worker": "tsx src/worker/index.ts",
     "set-tracked-branch": "tsx scripts/update-tracked-branch.ts",
     "db:docker:up": "docker compose up -d postgres",
@@ -32,6 +34,7 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
+    "openai": "^6.48.0",
     "pg": "^8.22.0",
     "zod": "^4.4.3"
   },

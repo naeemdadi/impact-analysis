@@ -44,7 +44,7 @@ In a second terminal, run:
 
 `pnpm run worker`
 
-The worker consumes `installation.sync` jobs. When a repository is installed or added to an existing installation, it builds and stores that repository's initial baseline graph automatically.
+The worker consumes `installation.sync`, `branch.push`, and `pull_request.analyze` jobs. It builds initial graphs on installation, refreshes the tracked-branch graph on pushes, and persists deterministic PR impact analyses.
 
 Health check:
 

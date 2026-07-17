@@ -43,6 +43,27 @@
       "when": 1784212000000,
       "tag": "0005_graph_schema_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784214000000,
+      "tag": "0006_mutable_branch_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784270000000,
+      "tag": "0007_pr_analysis",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784272000000,
+      "tag": "0008_pr_report",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,10 @@ export async function processNextBranchPushJob(): Promise<boolean> {
     const payload = pushPayloadSchema.parse(job.jobPayload);
     const result = await updateGraphIncrementally(payload, new GitHubRepositoryReader());
     await completeJob(job.id);
+    if (result?.status === "superseded") {
+      log("info", "push graph update superseded by newer branch head", { jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha, liveSha: result.liveSha });
+      return true;
+    }
     log("info", result ? "push graph snapshot ready" : "push graph build skipped for deleted branch", {
       jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha,
       snapshotId: result?.snapshotId, buildMode: result?.buildMode, buildDurationMs: result?.buildDurationMs,

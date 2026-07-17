@@ -1,0 +1,59 @@
+import { and, eq } from "drizzle-orm";
+
+import { db } from "../storage/db.js";
+import { prReportTable } from "../storage/schema.js";
+import type { ReportConfidence, ReportEvidence, ReportSelection } from "./report-types.js";
+
+export async function findReadyReport(analysisId: string): Promise<{ markdown: string; llmStatus: "not_requested" | "completed" | "fallback" } | null> {
+  const rows = await db.select({ markdown: prReportTable.markdown, llmStatus: prReportTable.llmStatus }).from(prReportTable).where(and(eq(prReportTable.prAnalysisId, analysisId), eq(prReportTable.status, "ready"))).limit(1);
+  if (!rows[0]) return null;
+  return { markdown: rows[0].markdown, llmStatus: rows[0].llmStatus as "not_requested" | "completed" | "fallback" };
+}
+
+export async function createBuildingReport(analysisId: string, confidence: ReportConfidence, evidence: ReportEvidence, selection: ReportSelection): Promise<void> {
+  await db.insert(prReportTable).values({
+    prAnalysisId: analysisId,
+    status: "building",
+    confidence,
+    evidenceJson: toJson(evidence),
+    selectionJson: toJson(selection),
+    markdown: "",
+    llmStatus: "not_requested",
+  }).onConflictDoUpdate({
+    target: prReportTable.prAnalysisId,
+    set: { status: "building", confidence, evidenceJson: toJson(evidence), selectionJson: toJson(selection), markdown: "", model: null, providerResponseId: null, inputTokens: null, outputTokens: null, llmStatus: "not_requested", llmError: null, completedAt: null },
+  });
+}
+
+export async function persistReadyReport(input: {
+  analysisId: string;
+  confidence: ReportConfidence;
+  evidence: ReportEvidence;
+  selection: ReportSelection;
+  markdown: string;
+  model: string | null;
+  providerResponseId: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  llmStatus: "not_requested" | "completed" | "fallback";
+  llmError: string | null;
+}): Promise<void> {
+  await db.update(prReportTable).set({
+    status: "ready",
+    confidence: input.confidence,
+    evidenceJson: toJson(input.evidence),
+    selectionJson: toJson(input.selection),
+    markdown: input.markdown,
+    model: input.model,
+    providerResponseId: input.providerResponseId,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    llmStatus: input.llmStatus,
+    llmError: input.llmError,
+    completedAt: new Date(),
+  }).where(eq(prReportTable.prAnalysisId, input.analysisId));
+}
+
+function toJson(value: object): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}

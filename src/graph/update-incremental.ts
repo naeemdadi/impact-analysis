@@ -3,14 +3,14 @@ import { isGraphFilePath } from "./baseline-graph-builder.js";
 import { buildIncrementalGraph, determineReanalyzedPaths } from "./incremental-graph-builder.js";
 import { createBuildingSnapshot, findReadySnapshotByIdentity, loadReadyGraphByIdentity, markSnapshotFailed, persistReadySnapshot } from "./snapshot-repository.js";
 import { getRepoConfig, updateRepoIdentity } from "../storage/repo-config-repo.js";
-import type { BaselineBuildResult, IncrementalGraphUpdateRequest, RepositoryReader, RepositorySource } from "./types.js";
+import type { BaselineBuildResult, IncrementalGraphUpdateRequest, RepositoryReader, RepositorySource, SupersededGraphUpdateResult } from "./types.js";
 
 const zeroSha = /^0+$/;
 
 export async function updateGraphIncrementally(
   request: IncrementalGraphUpdateRequest,
   repositoryReader: RepositoryReader,
-): Promise<BaselineBuildResult | null> {
+): Promise<BaselineBuildResult | SupersededGraphUpdateResult | null> {
   if (zeroSha.test(request.afterSha)) return null;
   const startedAt = Date.now();
   const config = await getRepoConfig(request.repoId);
@@ -18,11 +18,13 @@ export async function updateGraphIncrementally(
   if (!config.isActive) throw new Error(`repository ${request.repoId} is inactive`);
   if (request.branch !== config.trackedBranch) throw new Error(`push branch ${request.branch} is not tracked for repository ${request.repoId}`);
 
-  const ready = await findReadySnapshotByIdentity({ repoId: request.repoId, branch: request.branch, sha: request.afterSha });
-  if (ready) return ready;
   const identity = config.owner && config.name ? { owner: config.owner, name: config.name } : await repositoryReader.resolveRepository(config.repoId, config.installationId);
   if (!config.owner || !config.name) await updateRepoIdentity(config.repoId, identity.owner, identity.name);
   const githubInput = { repoId: config.repoId, installationId: config.installationId, owner: identity.owner, name: identity.name, branch: request.branch };
+  const liveSha = await repositoryReader.resolveBranchSha(githubInput);
+  if (liveSha !== request.afterSha) return { status: "superseded", liveSha };
+  const ready = await findReadySnapshotByIdentity({ repoId: request.repoId, branch: request.branch, sha: request.afterSha });
+  if (ready) return ready;
 
   const comparison = await repositoryReader.compareCommits({ ...githubInput, beforeSha: request.beforeSha, afterSha: request.afterSha });
   const forcedFallback = !comparison.comparable

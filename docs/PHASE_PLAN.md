@@ -90,7 +90,7 @@ Build first graph snapshot for the tracked branch.
 
 ### Status
 
-- Implementation complete and local migration applied
+- Implementation complete; mutable-graph migration is pending local application
 - Automated incremental graph behavior covered by fixture tests
 - Live GitHub push acceptance remains to be run against the installed test repository
 
@@ -103,16 +103,22 @@ Keep baseline graph fresh with minimal compute.
 - Push diff ingestion between old SHA and new SHA
 - Recompute touched files only
 - Update affected reverse dependency edges
-- Publish new immutable snapshot for new SHA
+- Record immutable snapshot metadata for each new SHA and atomically move the one mutable branch graph to that snapshot
 - Fallback full rebuild path on incremental failure
 
 ### Exit Criteria
 
-- Push to tracked branch creates a new valid snapshot
+- Push to tracked branch creates a new valid snapshot and makes it the branch's current graph
 - Incremental update is faster than full rebuild on test repo
 - Failure path rebuilds graph without manual intervention
 
 ## Phase 4: PR Impact Engine
+
+### Status
+
+- Implementation complete; apply the Phase 4 migration before processing PR jobs
+- Deterministic fixture coverage added for impact levels and dependency-path evidence
+- Live PR acceptance remains to be run against an installed repository
 
 ### Goal
 
@@ -125,7 +131,7 @@ Compute direct and indirect impact from PR changes using baseline graph.
 - Reverse traversal from changed symbols to entrypoints
 - Classification into affected pages APIs components and shared modules
 - Direct versus indirect impact tagging
-- Impact level rules from `SPEC.md`
+- Deterministic impact level rules: High for two or more entrypoints, Medium for changed routes, Low otherwise
 
 ### Exit Criteria
 
@@ -134,6 +140,12 @@ Compute direct and indirect impact from PR changes using baseline graph.
 - Missing evidence suppresses weak claims
 
 ## Phase 5: Evidence and LLM Report Generation
+
+### Status
+
+- Implementation complete; apply the Phase 5 migration before processing PR jobs
+- Deterministic report fixtures cover evidence IDs, confidence, invalid selections, and insufficient evidence
+- Live report acceptance remains to be run against an installed repository
 
 ### Goal
 
