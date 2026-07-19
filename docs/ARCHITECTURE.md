@@ -1,6 +1,6 @@
 # Impact Analysis Architecture
 
-> **Current implementation:** Phases 1–7. This document describes the code and database model as implemented, including deliberate limitations that remain for Phase 8 and later.
+> **Current implementation:** Phases 1–7 plus the first semantic-impact implementation. This document distinguishes implemented behavior from prepared-but-not-yet-wired domain classification.
 
 ## 1. Product boundary
 
@@ -13,6 +13,7 @@ It is not a code reviewer, test generator, runtime tracer, or a system that clai
 | Concern | Authority | What it may say |
 | --- | --- | --- |
 | File changes, symbols, imports, reachable routes | Deterministic TypeScript/source analysis | Facts and verified dependency paths |
+| Technical role and recommendation tier | Deterministic policy | Primary, secondary, technical-only, or evidence-only prominence |
 | Feature names and user-facing verification scenarios | OpenAI, constrained to supplied source context | Suggestions only |
 | Final report wording and evidence paths | Deterministic renderer | Only validated facts and selected scenarios |
 
@@ -31,9 +32,11 @@ flowchart LR
   W --> GHREAD[GitHub installation API reader]
   GHREAD --> GRAPH[Deterministic source graph]
   GRAPH --> DB[(Postgres graph and analysis records)]
+  GRAPH --> ROLE[Technical-role classification]
+  ROLE --> ASSESS[Deterministic impact assessment]
   GRAPH --> FEATURE[Feature-card index]
   FEATURE --> AI[OpenAI bounded source context]
-  DB --> REPORT[Deterministic report renderer]
+  ASSESS --> REPORT[Deterministic report renderer]
   AI --> REPORT
   REPORT --> DELIVERY[Sticky-comment delivery worker]
   DELIVERY --> PR[GitHub PR timeline comment]
@@ -207,6 +210,24 @@ Classification is deterministic:
 
 Component detection includes PascalCase functions, `forwardRef`, `memo`, `lazy`, and certain exported PascalCase aliases. Exports include direct exports, local export lists, renamed exports, and identifier default exports.
 
+### Technical roles and impact policy
+
+Graph file kind describes framework structure; technical role describes the module's likely engineering responsibility. It is deterministic, stored with each current graph file, and always includes its rule and strength.
+
+| Technical role | Typical deterministic signal | Report policy |
+| --- | --- | --- |
+| `analytics` | analytics/telemetry paths or tracking APIs | Technical-only |
+| `ui_primitive` | `components/ui`, UI primitives, design system | Technical-only |
+| `styling` | Stylesheet graph role | Technical-only |
+| `configuration`, `testing`, `infrastructure` | Config/test/infrastructure paths | Technical-only |
+| `presentation` | Page, API entrypoint, or component role | Secondary unless the route/API changed directly |
+| `utility` | Utility/helper path convention | Secondary |
+| `business_logic` | Business-oriented module naming convention | Primary |
+| `application_module` | Application code without a stronger role | Primary |
+| `unknown` | No reliable role rule | Evidence-only |
+
+Role strength is `strong`, `heuristic`, or `unknown`; it explains the classification but is not a probability. The system does not assign numeric confidence percentages.
+
 ### Import resolution statuses
 
 | Status | `to_file_id` | Interpretation |
@@ -366,6 +387,29 @@ Impact levels are deterministic:
 
 An unresolved or external import never fabricates a dependency path. Unresolved imports are counted and exposed as technical evidence.
 
+### Semantic impact assessment
+
+`pr_analysis` remains the raw deterministic answer to “what is reachable?”. `pr_impact_assessment` is a separate, auditable deterministic policy output that answers “how prominently should that reachability appear?”.
+
+```mermaid
+flowchart LR
+  C[Changed graph file] --> G[Verified reverse import path]
+  C --> R[Technical role]
+  G --> P[Impact policy]
+  R --> P
+  P --> A[Primary / Secondary / Technical-only / Evidence-only]
+  A --> REPORT[Report sections]
+```
+
+For every deterministic affected item, the assessment uses the changed seed at the start of its dependency path and assigns one tier:
+
+- **Primary** — direct changed route/API, or business/application module reachability.
+- **Secondary** — presentation/component or utility reachability that warrants route-level attention but is not promoted as business logic.
+- **Technical-only** — analytics, UI primitives, styling, infrastructure, configuration, and tests. Their paths remain visible, but they do not generate broad customer-flow recommendations.
+- **Evidence-only** — unknown role. The path is retained for audit without a strong recommendation.
+
+The policy never removes graph evidence. If several paths reach the same route, the report can show the route at its highest applicable tier while the stored assessment retains every selected path and reason.
+
 ## 11. Report generation and semantic scenarios
 
 `pr_analysis` is the durable deterministic evidence record. `pr_report` is a separate, regenerable presentation record, uniquely owned by one analysis. Keeping them separate means report/AI delivery failures never rewrite graph facts.
@@ -388,17 +432,21 @@ flowchart TD
 
 ### Evidence rules
 
-Report evidence contains only PR/base/head identity, deterministic impact facts, dependency paths, changed symbols, bounded changed hunks, and feature-card scenarios/provenance IDs. It does not contain a repository dump, full raw diff, database rows, or unverified behavior.
+Report evidence version 3 contains PR/base/head identity, deterministic impact facts, the persisted impact assessment, dependency paths, changed symbols, bounded changed hunks, and feature-card scenarios/provenance IDs. It does not contain a repository dump, full raw diff, database rows, or unverified behavior.
+
+The renderer presents Primary verification, Secondary verification, and Technical impact before scenario suggestions. Policy reasons are deterministic, for example: “technical-only because the changed seed is classified as analytics.” Scenario wording remains optional, bounded feature-card guidance.
 
 Changed hunks are computed locally from exact base/head blobs, not from GitHub’s optional patch. At most 12 graph-relevant changed files are used; each before/after excerpt is limited to 4,000 characters.
 
 Feature targets are ranked: direct entrypoints first, then shortest verified path, then lexical path; at most five are supplied. A stale tracked-branch feature card is never blindly used for a PR: the system builds exact-head context and either finds a matching fingerprint or generates an ephemeral exact-head card.
 
-### Current selection behavior
+### Current selection behavior and domain status
 
 The model may select **up to five** targets/scenarios from the evidence. The Markdown renderer displays only selected targets, while the technical evidence keeps all affected items. Consequently, a valid feature target can be absent from the visible suggested-verification section when the model selects fewer targets. This is a current behavior, not missing graph reachability. A planned improvement is to deterministically fill omitted targets when there are five or fewer eligible feature targets.
 
 If selection generation fails, a deterministic fallback selects the first available scenario for each eligible target (up to five). The report remains ready with `llm_status = fallback`; the PR analysis job does not fail.
+
+`module_domain_card` storage is prepared for source-backed domain labels such as Pricing, Reviews, or Identity. It is intentionally **not active yet**: no domain-index worker, OpenAI domain generator, or exact-head ephemeral domain-card use is wired into the assessment or report. Current prioritization uses deterministic technical roles only. Domain labels must not be interpreted as existing report evidence until that pipeline is implemented.
 
 ## 12. Sticky GitHub PR comment delivery
 
@@ -453,10 +501,12 @@ erDiagram
   GRAPH_FILE ||--o{ GRAPH_SYMBOL : contains
   GRAPH_FILE ||--o{ GRAPH_IMPORT : imports_from
   REPO_CONFIG ||--o{ PR_ANALYSIS : owns
+  PR_ANALYSIS ||--|| PR_IMPACT_ASSESSMENT : prioritized_as
   PR_ANALYSIS ||--|| PR_REPORT : renders_as
   REPO_CONFIG ||--o{ PR_COMMENT_DELIVERY : owns
   PR_ANALYSIS ||--o{ PR_COMMENT_DELIVERY : requested_or_delivered
   REPO_CONFIG ||--o{ FEATURE_CARD : has
+  REPO_CONFIG ||--o{ MODULE_DOMAIN_CARD : prepared_domain_metadata
   EVENT_INGEST ||--o{ JOB_QUEUE_ENQUEUED : originated
 ```
 
@@ -466,13 +516,15 @@ erDiagram
 | `event_ingest` | Append-only | Raw GitHub-delivery audit and payload hash |
 | `job_queue_enqueued` | Mutable state | Durable queue intent and job status/attempt/error lifecycle |
 | `graph_snapshot` | SHA metadata retained | Build identity, status, mode, counts, duration, current pointer |
-| `graph_file` | Mutable current graph | Current source path/blob/classification facts |
+| `graph_file` | Mutable current graph | Current source path/blob/framework classification plus technical role, reason, and strength |
 | `graph_symbol` | Mutable current graph | Current top-level declaration facts |
 | `graph_import` | Mutable current graph | Current forward import edges; reverse lookup uses `to_file_id` |
 | `feature_card` | Mutable per entrypoint | Current tracked-branch feature/scenario context |
 | `pr_analysis` | Immutable per PR head | Deterministic result for exact base/head pair |
+| `pr_impact_assessment` | Immutable per analysis | Deterministic role-based recommendation tiers and policy reasons |
 | `pr_report` | Immutable per analysis | Validated evidence, selection, rendered Markdown, model metadata |
 | `pr_comment_delivery` | Mutable per PR | Sticky GitHub comment pointer and latest desired/delivered state |
+| `module_domain_card` | Mutable per source path | Prepared storage for future source-backed domain metadata; not populated by a worker yet |
 
 ## 14. Failure behavior and honest outcomes
 
@@ -488,6 +540,7 @@ erDiagram
 | Incremental graph comparison unsafe | Full build fallback at exact target SHA | Normal graph facts after fallback |
 | Local module genuinely unresolved | Record `unresolved`, no fabricated edge | Exposed as technical count only |
 | Feature-card/OpenAI failure | Card unavailable; report falls back deterministically | No invented user scenario |
+| Domain-card pipeline unavailable | Current implementation has no domain generator/indexer | Role-only prioritization; no domain claim |
 | Semantic AI disabled | No source/hunks sent to OpenAI | Deterministic report only |
 | Report-selector failure | Persist deterministic fallback report | Analysis remains ready |
 | GitHub comment API failure | Fail only delivery record/job | Analysis/report are preserved |
@@ -508,6 +561,7 @@ Useful operational checks:
 | What graph is current? | `graph_snapshot.is_current = true` and current graph facts |
 | What deterministic PR result exists? | `pr_analysis.result_json` and status |
 | What report was rendered? | `pr_report.evidence_json`, `selection_json`, and `markdown` |
+| Why was a route Primary, Secondary, or Technical-only? | `pr_impact_assessment.assessment_json` and its dependency-path/policy reason |
 | Why is one feature target absent from the visible report? | `pr_report.selection_json` versus `evidence_json.featureTargets` |
 | Was the comment delivered? | `pr_comment_delivery` plus `pull_request.deliver` job status |
 
@@ -524,6 +578,7 @@ The test scripts map to the implemented phases:
 | `pnpm test:phase5` | Evidence, selection validation, deterministic rendering |
 | `pnpm test:feature` | Feature-card context/index behavior |
 | `pnpm test:phase6` | Comment-body correctness and identity footer/marker |
+| `pnpm test:phase7` | Queue reliability plus technical-role and impact-policy fixtures |
 
 The deliberate MVP boundaries are:
 
@@ -532,7 +587,9 @@ The deliberate MVP boundaries are:
 - file-import traversal, not call graphs or symbol-to-symbol bindings;
 - no runtime tracing, test generation, security review, or source-code review;
 - no GitHub check run or inline review comments;
-- no durable generic retry/backoff, automated reconciliation, or full historical graph storage yet.
+- source-backed module-domain generation/indexing is prepared in storage but not wired;
+- no edge semantics, symbol binding/call graph, workflow inference, or numeric confidence calibration;
+- no full historical graph storage.
 
 Phase 7 provides bounded retries, fenced worker leases, tracked-branch reconciliation, deadline controls, queue metrics, and the staging checklist. Phase 8 packages the project for demonstration and submission.
 

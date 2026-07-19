@@ -8,6 +8,8 @@ import type { ReportSelector } from "./report-types.js";
 import type { RepositoryReader } from "../graph/types.js";
 import { buildPrSemanticContext } from "./pr-semantic-context.js";
 import { errorMessage, log } from "../server/logger.js";
+import { assessImpact } from "../impact/impact-assessment.js";
+import { ensureImpactAssessment } from "../impact/pr-impact-assessment-repository.js";
 
 /** Builds one durable report without allowing an LLM failure to block delivery. */
 export async function ensurePrReport(
@@ -19,6 +21,7 @@ export async function ensurePrReport(
   const startedAt = Date.now();
   log("info", "PR report generation started", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, analysisStatus: analysis.status, force: Boolean(options.force) });
   const analysisId = await getPrAnalysisId(analysis);
+  const impactAssessment = await ensureImpactAssessment(analysisId, assessImpact(analysis));
   const existing = await findReadyReport(analysisId);
   if (existing && !options.force) {
     log("info", "PR report reused", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus: existing.llmStatus });
@@ -34,7 +37,7 @@ export async function ensurePrReport(
       log("warn", "PR semantic context unavailable; using deterministic report", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, error: errorMessage(error) });
     }
   }
-  const evidence = buildReportEvidence(analysis, { featureTargets: semantic.targets, changedHunks: semantic.changedHunks });
+  const evidence = buildReportEvidence(analysis, { featureTargets: semantic.targets, changedHunks: semantic.changedHunks, impactAssessment });
   const catalog = buildSelectionCatalog(evidence);
   let selection = defaultSelection(catalog);
   await createBuildingReport(analysisId, evidence, selection);

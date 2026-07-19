@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { DeterministicPrAnalysis, ProductImpactKind } from "../impact/pr-impact-types.js";
+import type { ImpactAssessment } from "../impact/impact-assessment.js";
 
 export type SummaryTemplate = "broad_shared_change" | "route_change" | "localized_change" | "no_graph_impact" | "insufficient_evidence";
 
@@ -25,7 +26,7 @@ export interface FeatureVerificationTarget {
 }
 
 export interface ReportEvidence {
-  version: 2;
+  version: 3;
   repoId: number;
   pullRequestNumber: number;
   baseSha: string;
@@ -39,6 +40,7 @@ export interface ReportEvidence {
   // Bounded, source-backed inputs for suggestions. They are not reachability evidence.
   featureTargets: FeatureVerificationTarget[];
   changedHunks: ChangedHunk[];
+  impactAssessment: ImpactAssessment;
 }
 
 export interface ReportSelection {

@@ -111,6 +111,9 @@ export const graphFileTable = pgTable(
     kind: text("kind").notNull(),
     // Explicit filesystem/AST rule that produced kind; used as report evidence rather than inference.
     classificationReason: text("classification_reason").notNull(),
+    technicalRole: text("technical_role").notNull().default("unknown"),
+    technicalRoleReason: text("technical_role_reason").notNull().default("not indexed"),
+    technicalRoleStrength: text("technical_role_strength").notNull().default("unknown"),
   },
   (table) => [
     // A repository path can appear only once in the current materialized graph.
@@ -304,6 +307,24 @@ export const featureCardTable = pgTable(
     index("feature_card_repo_branch_fingerprint_idx").on(table.repoId, table.branch, table.sourceFingerprint),
   ],
 );
+
+// Source-backed semantic ownership for one module. It is contextual metadata,
+// never a replacement for deterministic import evidence.
+export const moduleDomainCardTable = pgTable("module_domain_card", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
+  branch: text("branch").notNull(), path: text("path").notNull(), sourceFingerprint: text("source_fingerprint").notNull(),
+  status: text("status").notNull(), domainJson: jsonb("domain_json").$type<Record<string, unknown>>(), provenanceJson: jsonb("provenance_json").$type<Record<string, unknown>>().notNull(),
+  model: text("model"), providerResponseId: text("provider_response_id"), failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("module_domain_card_repo_branch_path_unique").on(table.repoId, table.branch, table.path)]);
+
+// Auditable policy output between raw deterministic analysis and presentation.
+export const prImpactAssessmentTable = pgTable("pr_impact_assessment", {
+  id: uuid("id").primaryKey().defaultRandom(), prAnalysisId: uuid("pr_analysis_id").notNull().references(() => prAnalysisTable.id),
+  version: integer("version").notNull(), status: text("status").notNull(), assessmentJson: jsonb("assessment_json").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [uniqueIndex("pr_impact_assessment_analysis_unique").on(table.prAnalysisId)]);
 
 // Raw webhook delivery ledger for traceability and dedupe support.
 export const eventIngestTable = pgTable("event_ingest", {

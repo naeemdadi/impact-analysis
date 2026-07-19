@@ -21,7 +21,7 @@ test("evidence has stable IDs and feature scenarios render from validated contex
     dependencyPath: ["src/lib/price.ts", "src/app/checkout/page.tsx"], title: "Checkout", description: "Purchase flow",
     scenarios: [{ id: "entry:src/app/checkout/page.tsx:scenario:purchase", title: "Purchase", steps: ["Complete a checkout with one item."], contextIds: ["context:1"] }],
   }], changedHunks: [{ id: "hunk:1", path: "src/lib/price.ts", beforeStartLine: 1, afterStartLine: 1, beforeExcerpt: "old", afterExcerpt: "new" }] });
-  assert.equal(evidence.version, 2);
+  assert.equal(evidence.version, 3);
   assert.deepEqual(evidence.changedSymbols.map((item) => item.id), ["symbol:src/lib/price.ts:function:price"]);
   const catalog = buildSelectionCatalog(evidence);
   const report = renderReport(evidence, defaultSelection(catalog));

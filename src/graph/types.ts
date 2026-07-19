@@ -13,6 +13,8 @@ export type GraphFileKind =
 export type GraphSymbolKind = "function" | "class" | "component" | "variable";
 export type GraphImportKind = "static" | "dynamic" | "type_only";
 export type GraphImportResolutionStatus = "resolved" | "unresolved" | "external" | "asset";
+export type TechnicalRole = "business_logic" | "presentation" | "ui_primitive" | "analytics" | "infrastructure" | "styling" | "configuration" | "testing" | "utility" | "application_module" | "unknown";
+export type TechnicalRoleStrength = "strong" | "heuristic" | "unknown";
 
 export interface SourceFile {
   path: string;
@@ -54,6 +56,9 @@ export interface GraphFile {
   blobSha: string;
   kind: GraphFileKind;
   classificationReason: string;
+  technicalRole?: TechnicalRole;
+  technicalRoleReason?: string;
+  technicalRoleStrength?: TechnicalRoleStrength;
 }
 
 export interface GraphSymbol {

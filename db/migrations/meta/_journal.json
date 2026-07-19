@@ -85,6 +85,13 @@
       "when": 1784285000000,
       "tag": "0011_queue_reliability",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784290000000,
+      "tag": "0012_semantic_impact_prioritization",
+      "breakpoints": true
     }
   ]
 }

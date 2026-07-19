@@ -176,6 +176,9 @@ export async function persistReadySnapshot(input: {
           blobSha: file.blobSha,
           kind: file.kind,
           classificationReason: file.classificationReason,
+          technicalRole: file.technicalRole ?? "unknown",
+          technicalRoleReason: file.technicalRoleReason ?? "not indexed",
+          technicalRoleStrength: file.technicalRoleStrength ?? "unknown",
         })
         .onConflictDoUpdate({
           target: [graphFileTable.snapshotId, graphFileTable.path],
@@ -183,6 +186,9 @@ export async function persistReadySnapshot(input: {
             blobSha: file.blobSha,
             kind: file.kind,
             classificationReason: file.classificationReason,
+            technicalRole: file.technicalRole ?? "unknown",
+            technicalRoleReason: file.technicalRoleReason ?? "not indexed",
+            technicalRoleStrength: file.technicalRoleStrength ?? "unknown",
           },
         })
         .returning({ id: graphFileTable.id });
@@ -337,6 +343,9 @@ export async function loadReadyGraphByIdentity(input: {
         blobSha: file.blobSha,
         kind: file.kind as GraphFile["kind"],
         classificationReason: file.classificationReason,
+        technicalRole: file.technicalRole as GraphFile["technicalRole"],
+        technicalRoleReason: file.technicalRoleReason,
+        technicalRoleStrength: file.technicalRoleStrength as GraphFile["technicalRoleStrength"],
       })),
       symbols: symbols.map((symbol) => ({
         filePath: pathsById.get(symbol.fileId)!,

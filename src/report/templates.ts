@@ -32,7 +32,12 @@ export function validateSelection(selection: ReportSelection, catalog: ReportSel
 export function renderReport(evidence: ReportEvidence, selection: ReportSelection): string {
   if (evidence.analysisStatus === "insufficient_evidence") return ["## Change Impact Report", "", "**Analysis status:** Insufficient evidence", "", `This report makes no impact claims because ${evidence.insufficientReason ?? "the required deterministic evidence is unavailable"}.`, "", footer(evidence)].join("\n");
   const targetById = new Map(evidence.featureTargets.map((target) => [target.id, target]));
-  const lines = ["## Change Impact Report", "", `**Impact level:** ${capitalize(evidence.impactLevel ?? "low")}`, "", "### Before merging, verify", ""];
+  const lines = ["## Change Impact Report", "", `**Impact level:** ${capitalize(evidence.impactLevel ?? "low")}`, ""];
+  for (const [tier, heading] of [["primary", "### Primary verification"], ["secondary", "### Secondary verification"], ["technical_only", "### Technical impact"]] as const) {
+    const items = evidence.impactAssessment.items.filter((item) => item.tier === tier);
+    if (items.length) lines.push(heading, ...items.map((item) => `- **${item.path}** — ${item.reason}`), "");
+  }
+  lines.push("### Before merging, verify", "");
   if (selection.verifications.length > 0) {
     for (const [index, chosen] of selection.verifications.entries()) {
       const target = targetById.get(chosen.entrypointId)!;
