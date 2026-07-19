@@ -1,7 +1,6 @@
 import type { EnqueueRequest, EnqueueResult } from "../types/events.js";
 import { db } from "../storage/db.js";
 import { eventIngestTable, jobQueueEnqueuedTable } from "../storage/schema.js";
-import { publishManagedQueue } from "./managed-queue.js";
 import { log } from "../server/logger.js";
 
 export async function enqueueJobWithIdempotency(request: EnqueueRequest): Promise<EnqueueResult> {
@@ -39,14 +38,6 @@ export async function enqueueJobWithIdempotency(request: EnqueueRequest): Promis
       idempotencyKey: request.idempotencyKey,
     };
   });
-
-  if (result.inserted) {
-    await publishManagedQueue({
-      jobType: request.jobType,
-      payload: request.jobPayload,
-      idempotencyKey: request.idempotencyKey,
-    });
-  }
 
   log("info", result.inserted ? "queue job enqueued" : "queue job deduplicated", {
     jobType: request.jobType,

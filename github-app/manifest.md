@@ -3,12 +3,13 @@
 ## App Identity
 
 - Name: `Impact Analysis`
-- Homepage URL: deployment URL of the Phase 1 service
+- Homepage URL: public project or demo page
 - Webhook URL: `<service-base-url>/webhooks/github`
 
 ## Webhook Events
 
 - `installation`
+- `installation_repositories`
 - `push`
 - `pull_request`
 
@@ -17,14 +18,12 @@
 - Metadata: Read-only
 - Pull requests: Read and write
 - Contents: Read-only
-- Checks: Read and write
 
 ## Account Permissions
 
-- None required for Phase 1
+- None required
 
 ## Why This Is Minimum Viable
 
-- `metadata` and `contents` support repository identity and later diff access.
+- `metadata` and `contents` support repository identity and source retrieval.
 - `pull_requests` is required for pull request payload, follow-up analysis, and the Phase 6 sticky PR comment.
-- `checks` allows future check run status updates without re-registering app scopes.

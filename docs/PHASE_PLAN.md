@@ -29,23 +29,16 @@ This plan is phase based so we can execute one phase at a time with clear exit c
 
 Define hard boundaries so implementation stays small and reliable.
 
-### Deliverables
+### Status
 
-- Final MVP scope doc: `docs/PHASE0_MVP_SCOPE.md`
-- Success metrics doc: `docs/PHASE0_SUCCESS_METRICS.md`
-- Risk register with mitigations: `docs/PHASE0_RISK_REGISTER.md`
-- Demo scenario list with 2 to 3 realistic PRs: `docs/PHASE0_DEMO_SCENARIOS.md`
+Complete. The locked scope and product boundaries are maintained in this plan
+and `docs/ARCHITECTURE.md` rather than separate Phase 0 planning documents.
 
 ### Exit Criteria
 
 - Team agrees on one tracked branch model
 - Team agrees on deterministic first principle
 - Team agrees on what will not be built in MVP
-
-### Phase 0 Status
-
-- Draft deliverables created
-- Ready for review and lock
 
 ## Phase 1: GitHub App Skeleton
 
@@ -76,9 +69,9 @@ Build first graph snapshot for the tracked branch.
 ### Deliverables
 
 - Repository fetch at target commit SHA
-- TypeScript path resolution support from `tsconfig`
+- Project-scoped JavaScript/TypeScript resolution from `tsconfig`, `jsconfig`, or conservative defaults
 - Graph builder for files symbols imports and reverse edges
-- File classification into pages APIs components and shared modules
+- Framework-proven pages, API routes, components, modules, and protocol bindings
 - Snapshot persistence keyed by `repo_id` `branch` and `sha`
 
 ### Exit Criteria
@@ -91,7 +84,7 @@ Build first graph snapshot for the tracked branch.
 
 ### Status
 
-- Implementation complete; mutable-graph migration is pending local application
+- Implementation complete; the clean baseline migration includes the mutable graph model.
 - Automated incremental graph behavior covered by fixture tests
 - Live GitHub push acceptance remains to be run against the installed test repository
 
@@ -117,7 +110,7 @@ Keep baseline graph fresh with minimal compute.
 
 ### Status
 
-- Implementation complete; apply the Phase 4 migration before processing PR jobs
+- Implementation complete; the clean baseline migration includes PR analysis.
 - Deterministic fixture coverage added for impact levels and dependency-path evidence
 - Live PR acceptance remains to be run against an installed repository
 
@@ -144,7 +137,7 @@ Compute direct and indirect impact from PR changes using baseline graph.
 
 ### Status
 
-- Implementation complete; apply the Phase 5 migration before processing PR jobs
+- Implementation complete; the clean baseline migration includes report persistence.
 - Deterministic report fixtures cover evidence IDs, invalid semantic output, and insufficient evidence
 - Live report acceptance remains to be run against an installed repository
 
@@ -162,7 +155,7 @@ Generate developer friendly output from deterministic evidence only.
 ### Exit Criteria
 
 - No report claim appears without evidence path
-- Output format matches target in `docs/PRODUCT.md`
+- Output format follows the report contract in `docs/ARCHITECTURE.md`
 
 ### Current Architecture Note
 
@@ -172,7 +165,7 @@ Generate developer friendly output from deterministic evidence only.
 
 ### Status
 
-- Implementation complete; apply the Phase 6 migration and approve the GitHub App's updated pull-request write permission before live delivery.
+- Implementation complete; GitHub App pull-request write permission is required for live delivery.
 - Automated comment-body coverage added; live PR-comment acceptance remains to be run against an installed repository.
 
 ### Goal
@@ -182,7 +175,6 @@ Deliver clear and update safe output inside GitHub PR.
 ### Deliverables
 
 - Sticky comment upsert logic
-- Optional check run status integration
 - Clear status messages for indexing running failed complete
 - Footer with analyzed `base_sha` and `head_sha`
 
@@ -196,8 +188,8 @@ Deliver clear and update safe output inside GitHub PR.
 
 ### Status
 
-- Implementation complete; apply the Phase 7 migration before starting workers.
-- Automated retry/deadline policy fixtures are included; run the staging checklist in `docs/PHASE7_STAGING_CHECKLIST.md` against an installed repository.
+- Implementation complete; the clean baseline migration includes queue reliability state.
+- Automated retry/deadline policy fixtures are included; validate worker restart, retries, reconciliation, and sticky-comment recovery against an installed repository before release.
 
 ### Goal
 
@@ -217,6 +209,10 @@ Handle real world event issues and failure modes.
 - Core flows pass reliability checklist in staging
 
 ## Phase 8: JS/TS Ecosystem Graph Expansion
+
+### Status
+
+Implementation complete.
 
 ### Goal
 
