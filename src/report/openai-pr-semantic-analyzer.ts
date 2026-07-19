@@ -25,6 +25,8 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
           "Summarize only the supplied changed-code excerpts and propose verification checks only for supplied prioritized entrypoints.",
           "Never claim a regression, business motivation, runtime behavior not shown by context, or an affected route not supplied.",
           "Every summary must cite changed hunk IDs. Every check must cite its entrypoint, changed hunk IDs, and context IDs.",
+          "Describe product behavior, not implementation. A verification check must name a manual user or operator action and an observable result on the supplied page or API.",
+          "Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or other CI/mechanical checks.",
           "Use concise developer-facing language. Return JSON only.",
         ].join(" ") },
         { role: "user", content: JSON.stringify(input) },
@@ -65,6 +67,7 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
   const targets = new Map(input.targets.map((target) => [target.id, target]));
   const selectedTargets = new Set<string>();
   for (const summary of result.changeSummaries) for (const id of summary.hunkIds) if (!hunkIds.has(id)) throw new Error(`unknown changed hunk ${id}`);
+  const verifications = [] as ReturnType<typeof prSemanticResultSchema.parse>["verifications"];
   for (const verification of result.verifications) {
     if (selectedTargets.has(verification.entrypointId)) throw new Error(`duplicate semantic target ${verification.entrypointId}`);
     selectedTargets.add(verification.entrypointId);
@@ -78,8 +81,23 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
       for (const id of check.hunkIds) if (!hunkIds.has(id)) throw new Error(`unknown changed hunk ${id}`);
       for (const id of check.contextIds) if (!contextIds.has(id)) throw new Error(`context ${id} does not belong to ${verification.entrypointId}`);
     }
+    const productChecks = verification.checks.filter((check) => !isImplementationConcern(check.text));
+    if (productChecks.length) verifications.push({ ...verification, checks: productChecks });
   }
-  return result;
+  return {
+    ...result,
+    changeSummaries: result.changeSummaries.filter((summary) => !isImplementationConcern(summary.summary)),
+    verifications,
+  };
+}
+
+/**
+ * The product reports observable regressions, not code-review mechanics. CI
+ * owns compile/build checks; implementation concepts do not belong in either
+ * an impact summary or a user-facing verification task.
+ */
+function isImplementationConcern(text: string): boolean {
+  return /\b(?:typescript|typecheck|compile|compil(?:e|es|ation)|build(?:\s+check)?|lint(?:ing)?|eslint|prettier|imports?|exports?|analytics|telemetry|instrumentation|tracking|callbacks?|props?|components?|hooks?|handlers?|functions?|interfaces?|wiring)\b/i.test(text);
 }
 
 /**

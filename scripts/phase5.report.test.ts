@@ -35,13 +35,51 @@ test("report renders PR-scoped semantic checks only for deterministic primary ta
   assert.equal(evidence.version, 4);
   assert.match(report, /Updates price handling/);
   assert.match(report, /Complete a checkout/);
-  assert.match(report, /src\/lib\/price\.ts.*src\/app\/checkout\/page\.tsx/);
+  assert.match(report, /What to verify before merging/);
+  assert.match(report, /Why: This page imports the modified `price` module/);
+  assert.match(report, /price \(changed\)/);
+  assert.match(report, /\/checkout \(page\)/);
+  assert.match(report, /<summary>Technical evidence · 1 affected file · 0 unresolved import\(s\)<\/summary>/);
+  assert.match(report, /```mermaid/);
+  assert.match(report, /classDef changed/);
+  assert.doesNotMatch(report, /All resolved dependency paths/);
+  assert.match(report, /<\/details>/);
   assert.doesNotMatch(report, /Confidence|Impact level/);
 });
 
 test("semantic output cannot add routes or source references", () => {
   assert.throws(() => validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:missing", checks: [{ text: "Test it", hunkIds: ["hunk:1"], contextIds: ["context:1:1"] }] }] }, semanticInput));
   assert.throws(() => validateSemanticResult({ changeSummaries: [{ hunkIds: ["hunk:missing"], summary: "No" }], verifications: [] }, semanticInput));
+});
+
+test("implementation-aware summaries and checks are removed while product checks remain", () => {
+  const semantic = validateSemanticResult({
+    changeSummaries: [
+      { hunkIds: ["hunk:1"], summary: "Updates the callback wiring for the checkout component." },
+      { hunkIds: ["hunk:1"], summary: "Updates the checkout total shown after a customer applies a discount." },
+    ],
+    verifications: [{
+      entrypointId: "entry:src/app/checkout/page.tsx",
+      checks: [
+        { text: "Complete a checkout and verify the displayed total.", hunkIds: ["hunk:1"], contextIds: ["context:1:1"] },
+        { text: "Run the TypeScript build and verify imports compile.", hunkIds: ["hunk:1"], contextIds: ["context:1:1"] },
+        { text: "Verify analytics tracking event definitions.", hunkIds: ["hunk:1"], contextIds: ["context:1:1"] },
+        { text: "Verify the success callback closes the dialog.", hunkIds: ["hunk:1"], contextIds: ["context:1:1"] },
+      ],
+    }],
+  }, semanticInput);
+  assert.deepEqual(semantic.changeSummaries.map((summary) => summary.summary), ["Updates the checkout total shown after a customer applies a discount."]);
+  assert.deepEqual(semantic.verifications[0]?.checks.map((check) => check.text), ["Complete a checkout and verify the displayed total."]);
+});
+
+test("a route without an approved AI check uses its matching changed-behavior summary", () => {
+  const evidence = buildReportEvidence(analysis(), assessment);
+  const report = renderReport(evidence, {
+    changeSummaries: [{ hunkIds: ["hunk:1"], summary: "Completing checkout now shows the updated total." }],
+    verifications: [],
+  }, { status: "completed", notice: null }, semanticInput);
+  assert.match(report, /Confirm this changed behavior: Completing checkout now shows the updated total/);
+  assert.doesNotMatch(report, /Review the user-visible behavior/);
 });
 
 test("strict provider schema uses only the supported subset; local validation keeps the bounds", () => {
@@ -78,7 +116,7 @@ test("AI fallback is visible while deterministic evidence remains available", ()
   assert.match(report, /AI-assisted guidance unavailable/);
   assert.match(report, /OpenAI authentication failed/);
   assert.match(report, /deterministic dependency evidence/);
-  assert.match(report, /Primary verification/);
+  assert.match(report, /What to verify before merging/);
 });
 
 test("insufficient evidence remains non-claiming", () => {

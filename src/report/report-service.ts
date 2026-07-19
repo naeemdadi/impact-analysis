@@ -76,7 +76,7 @@ export async function ensurePrReport(
     }
   }
   if (guidance.status === "fallback" && !llmError) llmError = "PR semantic source context unavailable";
-  const markdown = renderReport(evidence, semanticResult, guidance);
+  const markdown = renderReport(evidence, semanticResult, guidance, semanticInput);
   await persistReadyReport({ analysisId, evidence, semanticInput, semanticResult, markdown, model, providerResponseId, inputTokens, outputTokens, llmStatus, llmError });
   log("info", "PR report generation completed", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus, semanticTargetCount: semanticInput.targets.length, semanticSummaryCount: semanticResult?.changeSummaries.length ?? 0, durationMs: Date.now() - startedAt });
   return { markdown, reused: false, llmStatus };
