@@ -15,7 +15,7 @@ app.use(
     },
   }),
 );
-app.use("/images", express.static("images"));
+app.use("/images", express.static("images", { maxAge: "7d", immutable: true }));
 
 app.get("/health", (_request, response) => {
   response.status(200).json({ status: "ok" });
