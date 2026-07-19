@@ -339,14 +339,24 @@ export const jobQueueEnqueuedTable = pgTable("job_queue_enqueued", {
   status: text("status").notNull().default("pending"),
   // Number of times a worker has claimed this job.
   attempts: integer("attempts").notNull().default(0),
+  // First claim time; retained across retries to measure queue latency.
+  firstStartedAt: timestamp("first_started_at", { withTimezone: true }),
   // Earliest time a worker may claim this job; supports future retry backoff.
   availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
   // When a worker claimed this job for processing.
   lockedAt: timestamp("locked_at", { withTimezone: true }),
+  // Fenced worker ownership. Completion updates must match this token.
+  leaseToken: uuid("lease_token"),
+  // A crashed worker's lease can be reclaimed after this time.
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
   // When a worker completed processing this job successfully.
   completedAt: timestamp("completed_at", { withTimezone: true }),
   // Last deterministic processing error, retained when the job fails.
   lastError: text("last_error"),
+  // transient, permanent, timeout, cancelled, or worker_lost.
+  lastErrorKind: text("last_error_kind"),
+  // Final completion/failure time, distinct from a retry's intermediate state.
+  terminalAt: timestamp("terminal_at", { withTimezone: true }),
   // Time this job intent was persisted.
   enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

@@ -362,6 +362,14 @@ export async function loadReadyGraphByIdentity(input: {
   };
 }
 
+export async function getCurrentSnapshotSha(repoId: number, branch: string): Promise<string | null> {
+  const rows = await db.select({ sha: graphSnapshotTable.commitSha }).from(graphSnapshotTable).where(and(
+    eq(graphSnapshotTable.repoId, repoId), eq(graphSnapshotTable.branch, branch),
+    eq(graphSnapshotTable.status, "ready"), eq(graphSnapshotTable.isCurrent, true),
+  )).limit(1);
+  return rows[0]?.sha ?? null;
+}
+
 export async function markSnapshotFailed(snapshotId: string, reason: string, buildDurationMs: number): Promise<void> {
   await db
     .update(graphSnapshotTable)

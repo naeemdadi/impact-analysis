@@ -1,6 +1,6 @@
 # Impact Analysis Architecture
 
-> **Current implementation:** Phases 1–6. This document describes the code and database model as implemented, including deliberate limitations that remain for Phase 7 and later.
+> **Current implementation:** Phases 1–7. This document describes the code and database model as implemented, including deliberate limitations that remain for Phase 8 and later.
 
 ## 1. Product boundary
 
@@ -534,7 +534,7 @@ The deliberate MVP boundaries are:
 - no GitHub check run or inline review comments;
 - no durable generic retry/backoff, automated reconciliation, or full historical graph storage yet.
 
-Phase 7 is the intended home for broader retry, timeout/cancellation, missed-event/out-of-order reconciliation, and queue/build observability hardening. Phase 8 packages the project for demonstration and submission.
+Phase 7 provides bounded retries, fenced worker leases, tracked-branch reconciliation, deadline controls, queue metrics, and the staging checklist. Phase 8 packages the project for demonstration and submission.
 
 ## 17. End-to-end scenarios
 
@@ -582,4 +582,3 @@ Phase 7 is the intended home for broader retry, timeout/cancellation, missed-eve
 2. An older delivery job later acquires the per-PR lock and sees it is stale.
 3. It completes without overwriting the GitHub comment.
 4. The newest ready report becomes the comment body.
-

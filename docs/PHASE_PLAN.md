@@ -198,6 +198,11 @@ Deliver clear and update safe output inside GitHub PR.
 
 ## Phase 7: Reliability Hardening
 
+### Status
+
+- Implementation complete; apply the Phase 7 migration before starting workers.
+- Automated retry/deadline policy fixtures are included; run the staging checklist in `docs/PHASE7_STAGING_CHECKLIST.md` against an installed repository.
+
 ### Goal
 
 Handle real world event issues and failure modes.

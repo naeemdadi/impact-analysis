@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 import { GitHubPullRequestCommentWriter } from "../github/pull-request-comment-writer.js";
-import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 import { markPrCommentDeliveryFailed } from "../delivery/pr-comment-delivery-repository.js";
 import { deliverPullRequestComment } from "../delivery/pr-comment-delivery-service.js";
+import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const deliveryPayloadSchema = z.object({
   repoId: z.number(),
@@ -21,8 +22,9 @@ export async function processNextPullRequestDeliveryJob(): Promise<boolean> {
   const startedAt = Date.now();
   try {
     payload = deliveryPayloadSchema.parse(job.jobPayload);
-    const result = await deliverPullRequestComment(payload, new GitHubPullRequestCommentWriter());
-    await completeJob(job.id);
+    const parsed = payload;
+    const result = await runWithDeadline(timeoutForJob(job.jobType), async () => deliverPullRequestComment(parsed, new GitHubPullRequestCommentWriter()));
+    await completeJob(job);
     log("info", "pull request comment delivered", {
       jobId: job.id, repoId: payload.repoId, pullRequestNumber: payload.pullRequestNumber,
       headSha: payload.headSha, commentId: result.commentId, action: result.action, durationMs: Date.now() - startedAt,
@@ -30,7 +32,7 @@ export async function processNextPullRequestDeliveryJob(): Promise<boolean> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "pull request comment delivery failed";
     if (payload) await markPrCommentDeliveryFailed({ ...payload, analysisId: payload.prAnalysisId, error: message });
-    await failJob(job.id, message);
+    await retryOrFailJob(job, error);
     log("error", "pull request comment delivery failed", {
       jobId: job.id, repoId: payload?.repoId ?? null, pullRequestNumber: payload?.pullRequestNumber ?? null,
       headSha: payload?.headSha ?? null, error: message, durationMs: Date.now() - startedAt,

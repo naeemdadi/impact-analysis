@@ -135,3 +135,12 @@ export async function getRepoConfigsForInstallation(installationId: number): Pro
     .where(eq(repoConfigTable.installationId, installationId));
   return rows.map((row) => ({ ...row, accessState: row.accessState as RepoAccessState }));
 }
+
+export async function listActiveRepoConfigs(): Promise<RepoConfig[]> {
+  const rows = await db.select({
+    repoId: repoConfigTable.repoId, installationId: repoConfigTable.installationId, owner: repoConfigTable.owner,
+    name: repoConfigTable.name, trackedBranch: repoConfigTable.trackedBranch, isActive: repoConfigTable.isActive,
+    accessState: repoConfigTable.accessState, semanticAiEnabled: repoConfigTable.semanticAiEnabled,
+  }).from(repoConfigTable).where(eq(repoConfigTable.isActive, true));
+  return rows.map((row) => ({ ...row, accessState: row.accessState as RepoAccessState }));
+}

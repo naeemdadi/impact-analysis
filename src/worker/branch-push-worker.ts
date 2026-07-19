@@ -2,9 +2,11 @@ import { z } from "zod";
 
 import { updateGraphIncrementally } from "../graph/update-incremental.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
-import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
+import { enqueueBranchReconciliation } from "../queue/reconciliation-queue.js";
+import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const pushPayloadSchema = z.object({
   repoId: z.number(),
@@ -16,11 +18,13 @@ const pushPayloadSchema = z.object({
 export async function processNextBranchPushJob(): Promise<boolean> {
   const job = await claimNextJob("branch.push");
   if (!job) return false;
+  let payload: z.infer<typeof pushPayloadSchema> | null = null;
   try {
-    const payload = pushPayloadSchema.parse(job.jobPayload);
-    const result = await updateGraphIncrementally(payload, new GitHubRepositoryReader());
+    payload = pushPayloadSchema.parse(job.jobPayload);
+    const parsed = payload;
+    const result = await runWithDeadline(timeoutForJob(job.jobType), async () => updateGraphIncrementally(parsed, new GitHubRepositoryReader()));
     if (result?.status === "superseded") {
-      await completeJob(job.id);
+      await completeJob(job);
       log("info", "push graph update superseded by newer branch head", { jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha, liveSha: result.liveSha });
       return true;
     }
@@ -31,7 +35,7 @@ export async function processNextBranchPushJob(): Promise<boolean> {
       mode: result.buildMode === "incremental" ? "incremental" : "full",
       changedPaths: result.featureIndexPaths,
     });
-    await completeJob(job.id);
+    await completeJob(job);
     log("info", result ? "push graph snapshot ready" : "push graph build skipped for deleted branch", {
       jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha,
       snapshotId: result?.snapshotId, buildMode: result?.buildMode, buildDurationMs: result?.buildDurationMs,
@@ -40,7 +44,10 @@ export async function processNextBranchPushJob(): Promise<boolean> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "branch push worker error";
-    await failJob(job.id, message);
+    const outcome = await retryOrFailJob(job, error);
+    if (!outcome.retried && payload) {
+      await enqueueBranchReconciliation({ repoId: payload.repoId, branch: payload.branch, sha: payload.afterSha, reason: `terminal branch.push failure: ${outcome.errorKind}` });
+    }
     log("error", "push graph update failed", { jobId: job.id, error: message });
   }
   return true;

@@ -2,9 +2,10 @@ import { z } from "zod";
 
 import { buildAndPersistBaselineGraph } from "../graph/build-baseline.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
-import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
+import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const installationSyncPayloadSchema = z.object({
   installationId: z.number(),
@@ -25,16 +26,15 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
         jobId: job.id,
         action: payload.action,
       });
-      await completeJob(job.id);
+      await completeJob(job);
       return true;
     }
 
     const repositoryReader = new GitHubRepositoryReader();
     for (const repoId of payload.repositoryIds) {
-      const result = await buildAndPersistBaselineGraph(
-        { repoId, reuseReadySnapshot: true },
-        repositoryReader,
-      );
+      const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildAndPersistBaselineGraph(
+        { repoId, reuseReadySnapshot: true }, repositoryReader,
+      ));
       await enqueueFeatureIndex({ deliveryId: job.deliveryId, repoId, branch: result.branch, sha: result.sha, mode: "full" });
       log("info", "baseline snapshot ready", {
         jobId: job.id,
@@ -47,10 +47,10 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
       });
     }
 
-    await completeJob(job.id);
+    await completeJob(job);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown installation sync worker error";
-    await failJob(job.id, message);
+    await retryOrFailJob(job, error);
     log("error", "installation sync job failed", { jobId: job.id, error: message });
   }
   return true;

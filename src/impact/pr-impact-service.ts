@@ -6,6 +6,7 @@ import { getRepoConfig, updateRepoIdentity } from "../storage/repo-config-repo.j
 import { analyzePrImpact, createInsufficientAnalysis } from "./pr-impact-engine.js";
 import type { DeterministicPrAnalysis, PullRequestAnalysisRequest } from "./pr-impact-types.js";
 import { errorMessage, log } from "../server/logger.js";
+import { enqueueBranchReconciliation } from "../queue/reconciliation-queue.js";
 
 /** Fetches exact PR source states and returns deterministic, non-persisted facts. */
 export async function buildPullRequestImpactAnalysis(
@@ -61,6 +62,14 @@ async function loadBaseGraph(
   if (current) {
     log("info", "PR impact analysis reused current base graph", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, snapshotId: current.snapshotId });
     return current.graph;
+  }
+  // This PR can still be analyzed against an exact ephemeral base. Reconcile
+  // the live tracked branch separately so a missed push cannot leave it stale.
+  try {
+    const liveSha = await repositoryReader.resolveBranchSha({ repoId: sourceInput.repoId, installationId: sourceInput.installationId, owner: sourceInput.owner, name: sourceInput.name, branch: sourceInput.branch });
+    await enqueueBranchReconciliation({ repoId: request.repoId, branch: sourceInput.branch, sha: liveSha, reason: "PR base graph was not the current tracked snapshot" });
+  } catch (error) {
+    log("warn", "PR graph reconciliation request could not be queued", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, error: errorMessage(error) });
   }
   // Historical graph rows are intentionally not retained. Build this exact base
   // in memory and leave the mutable tracked-branch graph untouched.

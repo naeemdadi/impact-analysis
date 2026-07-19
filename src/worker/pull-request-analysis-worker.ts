@@ -6,8 +6,9 @@ import { buildPullRequestImpactAnalysis } from "../impact/pr-impact-service.js";
 import { ensurePrReport } from "../report/report-service.js";
 import { enqueuePullRequestDelivery } from "../delivery/pr-comment-delivery-queue.js";
 import { requestPrCommentDelivery } from "../delivery/pr-comment-delivery-repository.js";
-import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
+import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const pullRequestPayloadSchema = z.object({
   repoId: z.number(),
@@ -25,9 +26,10 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
   let payload: z.infer<typeof pullRequestPayloadSchema> | null = null;
   try {
     payload = pullRequestPayloadSchema.parse(job.jobPayload);
-    const existing = await findCompletedPrAnalysis(payload);
+    const parsed = payload;
+    const existing = await findCompletedPrAnalysis(parsed);
     if (existing) {
-      const report = await ensurePrReport(existing, undefined, new GitHubRepositoryReader());
+      const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(existing, undefined, new GitHubRepositoryReader()));
       await enqueueDeliverySafely({
         deliveryId: job.deliveryId,
         repoId: payload.repoId,
@@ -36,7 +38,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
         headSha: payload.headSha,
         deliveryState: "ready",
       });
-      await completeJob(job.id);
+      await completeJob(job);
       log("info", "pull request analysis reused", { jobId: job.id, repoId: payload.repoId, pullRequestNumber: payload.pullRequestNumber, headSha: payload.headSha, reportReused: report.reused, llmStatus: report.llmStatus });
       return true;
     }
@@ -51,9 +53,9 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
       headSha: payload.headSha,
       deliveryState: "running",
     });
-    const result = await buildPullRequestImpactAnalysis(payload, new GitHubRepositoryReader());
+    const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactAnalysis(parsed, new GitHubRepositoryReader()));
     await persistPrAnalysis(result);
-    const report = await ensurePrReport(result, undefined, new GitHubRepositoryReader());
+    const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(result, undefined, new GitHubRepositoryReader()));
     await enqueueDeliverySafely({
       deliveryId: job.deliveryId,
       repoId: payload.repoId,
@@ -62,7 +64,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
       headSha: payload.headSha,
       deliveryState: "ready",
     });
-    await completeJob(job.id);
+    await completeJob(job);
     log("info", "pull request analysis ready", {
       jobId: job.id,
       repoId: payload.repoId,
@@ -87,7 +89,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
         deliveryState: "failed",
       });
     }
-    await failJob(job.id, message);
+    await retryOrFailJob(job, error);
     log("error", "pull request analysis failed", { jobId: job.id, error: message });
   }
   return true;
