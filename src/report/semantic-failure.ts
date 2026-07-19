@@ -5,6 +5,7 @@
 export class SemanticAnalysisOutputError extends Error {
   constructor(
     readonly kind: "empty_output" | "malformed_json" | "schema_validation" | "evidence_validation",
+    readonly diagnostic: string | null = null,
   ) {
     super(kind);
     this.name = "SemanticAnalysisOutputError";
@@ -30,13 +31,16 @@ export function classifySemanticFailure(error: unknown): SemanticFailure {
       schema_validation: { persistedReason: "OpenAI response did not match the required report format", notice: "OpenAI guidance did not match the required report format." },
       evidence_validation: { persistedReason: "OpenAI guidance could not be tied to supplied evidence", notice: "OpenAI guidance could not be tied to the supplied evidence." },
     } as const;
+    const base = outputFailures[error.kind];
+    const diagnostic = error.diagnostic;
     return {
       category: error.kind,
-      ...outputFailures[error.kind],
+      persistedReason: diagnostic ? `${base.persistedReason} (${diagnostic})` : base.persistedReason,
+      notice: base.notice,
       providerStatus: null,
       providerCode: null,
       providerType: null,
-      providerDiagnostic: null,
+      providerDiagnostic: diagnostic,
     };
   }
 

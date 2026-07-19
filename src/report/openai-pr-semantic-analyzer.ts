@@ -1,12 +1,13 @@
 import OpenAI from "openai";
+import { z } from "zod";
 
 import { prSemanticResultSchema, type PrSemanticAnalyzer, type PrSemanticInput, type SemanticAnalysisResult } from "./report-types.js";
 import { SemanticAnalysisOutputError } from "./semantic-failure.js";
 import { log } from "../server/logger.js";
 
 /**
- * Explains approved source excerpts. It cannot select reachability targets or
- * write unbounded report prose; the renderer owns all evidence language.
+ * Explains a deliberately small, source-cited PR packet. It cannot choose
+ * reachability targets or write unbounded report prose; rendering owns facts.
  */
 export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
   private readonly client: OpenAI;
@@ -22,24 +23,24 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
       model: this.model,
       input: [
         { role: "developer", content: [
-          "Summarize only the supplied changed-code excerpts and propose verification checks only for supplied prioritized entrypoints.",
-          "Never claim a regression, business motivation, runtime behavior not shown by context, or an affected route not supplied.",
-          "Every summary must cite changed hunk IDs. Every check must cite its entrypoint, changed hunk IDs, and context IDs.",
-          "Describe product behavior, not implementation. A verification check must name a manual user or operator action and an observable result on the supplied page or API.",
-          "Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or other CI/mechanical checks.",
+          "Summarize only the supplied changed-code excerpts and propose verification scenarios only for supplied prioritized entrypoints.",
+          "The graph, not you, establishes reachability. Never add a route, API, behavior, workflow, motivation, or regression that is not supported by supplied evidence.",
+          "Every summary must cite changed hunk IDs. Every scenario must cite its entrypoint, at least one changed hunk, and supplied source-anchor IDs.",
+          "A scenario needs a concise user-facing title, optional setup only when shown in evidence, manual actions, and observable expected results.",
+          "The verifications object must include every supplied target ID. Produce one scenario for every supplied page target that has interaction or state evidence before adding a second scenario anywhere. Use an empty scenarios array only when that target has no supported user-facing scenario.",
+          "Describe product behavior, not implementation. Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or CI/mechanical checks.",
+          "Do not produce a scenario for an API target unless its supplied anchors establish an observable integration or operator contract.",
           "Use concise developer-facing language. Return JSON only.",
         ].join(" ") },
         { role: "user", content: JSON.stringify(input) },
       ],
-      text: { format: { type: "json_schema", name: "pr_semantic_analysis", strict: true, schema: semanticJsonSchema(targetIds) } },
+      text: { format: { type: "json_schema", name: "pr_verification_scenarios", strict: true, schema: semanticJsonSchema(targetIds) } },
     });
-    if (!response.output_text.trim()) {
-      throw new SemanticAnalysisOutputError("empty_output");
-    }
+    if (!response.output_text.trim()) throw new SemanticAnalysisOutputError("empty_output");
 
     let parsedOutput: unknown;
     try {
-      parsedOutput = JSON.parse(response.output_text);
+      parsedOutput = normalizeProviderOutput(JSON.parse(response.output_text), targetIds);
     } catch {
       throw new SemanticAnalysisOutputError("malformed_json");
     }
@@ -47,82 +48,145 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
     let schemaValidated: ReturnType<typeof prSemanticResultSchema.parse>;
     try {
       schemaValidated = prSemanticResultSchema.parse(parsedOutput);
-    } catch {
-      throw new SemanticAnalysisOutputError("schema_validation");
+    } catch (error) {
+      throw new SemanticAnalysisOutputError("schema_validation", zodDiagnostic(error));
     }
 
     let result: ReturnType<typeof prSemanticResultSchema.parse>;
     try {
       result = validateSemanticResult(schemaValidated, input);
-    } catch {
-      throw new SemanticAnalysisOutputError("evidence_validation");
+    } catch (error) {
+      throw new SemanticAnalysisOutputError("evidence_validation", safeValidationDiagnostic(error));
     }
-    log("info", "OpenAI PR semantic analysis completed", { repoId: evidence.repoId, pullRequestNumber: evidence.pullRequestNumber, headSha: evidence.headSha, changedHunkCount: input.changedHunks.length, targetCount: input.targets.length, summaryCount: result.changeSummaries.length, verificationCount: result.verifications.length, model: this.model, providerResponseId: response.id, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null, durationMs: Date.now() - startedAt });
+    log("info", "OpenAI PR verification scenarios completed", {
+      repoId: evidence.repoId,
+      pullRequestNumber: evidence.pullRequestNumber,
+      headSha: evidence.headSha,
+      changedHunkCount: input.changedHunks.length,
+      targetCount: input.targets.length,
+      anchorCount: input.targets.reduce((total, target) => total + target.anchors.length, 0),
+      summaryCount: result.changeSummaries.length,
+      scenarioCount: result.verifications.reduce((total, verification) => total + verification.scenarios.length, 0),
+      rejectedScenarioCount: schemaValidated.verifications.reduce((total, verification) => total + verification.scenarios.length, 0)
+        - result.verifications.reduce((total, verification) => total + verification.scenarios.length, 0),
+      model: this.model,
+      providerResponseId: response.id,
+      inputTokens: response.usage?.input_tokens ?? null,
+      outputTokens: response.usage?.output_tokens ?? null,
+      durationMs: Date.now() - startedAt,
+    });
     return { result, providerResponseId: response.id, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null };
   }
 }
 
 export function validateSemanticResult(result: ReturnType<typeof prSemanticResultSchema.parse>, input: PrSemanticInput): ReturnType<typeof prSemanticResultSchema.parse> {
-  const hunkIds = new Set(input.changedHunks.map((hunk) => hunk.id));
+  const hunkById = new Map(input.changedHunks.map((hunk) => [hunk.id, hunk]));
   const targets = new Map(input.targets.map((target) => [target.id, target]));
   const selectedTargets = new Set<string>();
-  for (const summary of result.changeSummaries) for (const id of summary.hunkIds) if (!hunkIds.has(id)) throw new Error(`unknown changed hunk ${id}`);
+  for (const summary of result.changeSummaries) for (const id of summary.hunkIds) if (!hunkById.has(id)) throw new Error(`unknown changed hunk ${id}`);
+
   const verifications = [] as ReturnType<typeof prSemanticResultSchema.parse>["verifications"];
   for (const verification of result.verifications) {
     if (selectedTargets.has(verification.entrypointId)) throw new Error(`duplicate semantic target ${verification.entrypointId}`);
     selectedTargets.add(verification.entrypointId);
     const target = targets.get(verification.entrypointId);
     if (!target) throw new Error(`unknown semantic target ${verification.entrypointId}`);
-    const contextIds = new Set(target.context.map((item) => item.id));
-    const checkTexts = new Set<string>();
-    for (const check of verification.checks) {
-      if (checkTexts.has(check.text)) throw new Error(`duplicate semantic verification check for ${verification.entrypointId}`);
-      checkTexts.add(check.text);
-      for (const id of check.hunkIds) if (!hunkIds.has(id)) throw new Error(`unknown changed hunk ${id}`);
-      for (const id of check.contextIds) if (!contextIds.has(id)) throw new Error(`context ${id} does not belong to ${verification.entrypointId}`);
+    if (target.kind === "api_route" && !target.apiVerificationAllowed) throw new Error(`API target ${verification.entrypointId} has no observable contract evidence`);
+    const anchors = new Map(target.anchors.map((anchor) => [anchor.id, anchor]));
+    const titles = new Set<string>();
+    const scenarios = [] as typeof verification.scenarios;
+    for (const rawScenario of verification.scenarios.slice(0, 2)) {
+      const scenario = { ...rawScenario, actions: rawScenario.actions.slice(0, 3), expected: rawScenario.expected.slice(0, 3) };
+      if (titles.has(scenario.title)) throw new Error(`duplicate scenario title for ${verification.entrypointId}`);
+      titles.add(scenario.title);
+      if (!scenario.hunkIds.some((id) => hunkById.get(id)?.path === target.changedSeedPath)) throw new Error(`scenario does not cite its changed seed ${target.changedSeedPath}`);
+      for (const id of scenario.hunkIds) if (!hunkById.has(id)) throw new Error(`unknown changed hunk ${id}`);
+      for (const id of scenario.anchorIds) if (!anchors.has(id)) throw new Error(`anchor ${id} does not belong to ${verification.entrypointId}`);
+      // The entrypoint ID already selects this exact route. Add its canonical
+      // anchor deterministically when the model omits the redundant citation.
+      const anchorIds = [...new Set(scenario.anchorIds)];
+      const entrypointAnchor = target.anchors.find((anchor) => anchor.kind === "entrypoint");
+      if (entrypointAnchor && !anchorIds.includes(entrypointAnchor.id)) anchorIds.unshift(entrypointAnchor.id);
+      const behavioralAnchor = target.anchors.find((anchor) => ["interaction", "state", "api_contract", "test"].includes(anchor.kind));
+      if (behavioralAnchor && !anchorIds.includes(behavioralAnchor.id)) anchorIds.splice(entrypointAnchor ? 1 : 0, 0, behavioralAnchor.id);
+      if (anchorIds.length > 8) anchorIds.length = 8;
+      const citedAnchors = anchorIds.map((id) => anchors.get(id)!);
+      if (!citedAnchors.some((anchor) => anchor.kind === "entrypoint")) throw new Error(`target lacks an entrypoint anchor for ${verification.entrypointId}`);
+      if (!citedAnchors.some((anchor) => ["interaction", "state", "api_contract", "test"].includes(anchor.kind))) throw new Error(`target lacks behavioral evidence for ${verification.entrypointId}`);
+      const sanitized = sanitizeScenario(scenario);
+      if (!sanitized) continue;
+      scenarios.push({ ...sanitized, anchorIds });
     }
-    const productChecks = verification.checks.filter((check) => !isImplementationConcern(check.text));
-    if (productChecks.length) verifications.push({ ...verification, checks: productChecks });
+    if (scenarios.length) verifications.push({ ...verification, scenarios });
   }
   return {
     ...result,
-    changeSummaries: result.changeSummaries.filter((summary) => !isImplementationConcern(summary.summary)),
+    changeSummaries: result.changeSummaries.flatMap((summary) => {
+      const text = sanitizeProductText(summary.summary);
+      return text ? [{ ...summary, summary: text }] : [];
+    }),
     verifications,
   };
 }
 
-/**
- * The product reports observable regressions, not code-review mechanics. CI
- * owns compile/build checks; implementation concepts do not belong in either
- * an impact summary or a user-facing verification task.
- */
-function isImplementationConcern(text: string): boolean {
-  return /\b(?:typescript|typecheck|compile|compil(?:e|es|ation)|build(?:\s+check)?|lint(?:ing)?|eslint|prettier|imports?|exports?|analytics|telemetry|instrumentation|tracking|callbacks?|props?|components?|hooks?|handlers?|functions?|interfaces?|wiring)\b/i.test(text);
+/** Product reports observable regressions; CI owns mechanical code checks. */
+function sanitizeScenario<T extends { title: string; setup: string | null; actions: string[]; expected: string[] }>(scenario: T): T | null {
+  const title = sanitizeProductText(scenario.title);
+  const setup = scenario.setup === null ? null : sanitizeProductText(scenario.setup);
+  const actions = scenario.actions.map(sanitizeProductText);
+  const expected = scenario.expected.map(sanitizeProductText);
+  if (!title || (scenario.setup !== null && !setup) || actions.some((value) => !value) || expected.some((value) => !value)) return null;
+  return { ...scenario, title, setup, actions: actions as string[], expected: expected as string[] };
 }
 
-/**
- * Strict Structured Outputs accepts a deliberately small JSON Schema subset.
- * Cardinality and length limits are therefore enforced by Zod after receiving
- * the response, not by API-schema keywords such as maxItems or minLength.
- */
+function sanitizeProductText(text: string): string | null {
+  // These phrases make a check compete with CI or ask for implementation work.
+  if (/\b(?:typescript|typecheck|compile|compil(?:e|es|ation)|build(?:\s+check)?|lint(?:ing)?|eslint|prettier)\b/i.test(text)) return null;
+  // A model may use a harmless code noun in an otherwise user-facing sentence.
+  // Remove that noun instead of throwing away the customer-flow recommendation.
+  const sanitized = text
+    .replace(/\b(?:imports?|exports?|analytics|telemetry|instrumentation|tracking|callbacks?|interfaces?|wiring|components?|hooks?|handlers?|functions?|props?)\b/gi, "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (/^(?:updates?|changes?|modifies?)\s+(?:for\s+)?[a-z0-9_-]+\.?$/i.test(sanitized)) return null;
+  return sanitized.length ? sanitized : null;
+}
+
+/** Validation diagnostics intentionally contain only field paths and error codes. */
+function zodDiagnostic(error: unknown): string | null {
+  if (!(error instanceof z.ZodError)) return null;
+  const details = error.issues.slice(0, 3).map((issue) => `${issue.path.map(String).join(".") || "root"}:${issue.code}`);
+  return details.length ? details.join(", ") : null;
+}
+
+function safeValidationDiagnostic(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const value = error.message.replace(/[^a-z0-9_:. -]/gi, "").slice(0, 240).trim();
+  return value || null;
+}
+
+/** Structured Outputs accepts this deliberately small JSON Schema subset. */
 export function semanticJsonSchema(targetIds: string[]) {
-  const check = {
+  const scenario = {
     type: "object",
     additionalProperties: false,
-    required: ["text", "hunkIds", "contextIds"],
+    required: ["title", "setup", "actions", "expected", "hunkIds", "anchorIds"],
     properties: {
-      text: { type: "string" },
+      title: { type: "string" },
+      setup: { anyOf: [{ type: "string" }, { type: "null" }] },
+      actions: { type: "array", items: { type: "string" } },
+      expected: { type: "array", items: { type: "string" } },
       hunkIds: { type: "array", items: { type: "string" } },
-      contextIds: { type: "array", items: { type: "string" } },
+      anchorIds: { type: "array", items: { type: "string" } },
     },
   } as const;
   const verification = {
     type: "object",
     additionalProperties: false,
-    required: ["entrypointId", "checks"],
+    required: ["scenarios"],
     properties: {
-      entrypointId: targetIds.length > 0 ? { type: "string", enum: targetIds } : { type: "string" },
-      checks: { type: "array", items: check },
+      scenarios: { type: "array", items: scenario },
     },
   } as const;
 
@@ -143,7 +207,29 @@ export function semanticJsonSchema(targetIds: string[]) {
           },
         },
       },
-      verifications: { type: "array", items: verification },
+      verifications: {
+        type: "object",
+        additionalProperties: false,
+        required: targetIds,
+        properties: Object.fromEntries(targetIds.map((targetId) => [targetId, verification])),
+      },
     },
   } as const;
+}
+
+/** Converts the provider's keyed, coverage-enforcing shape into our durable array contract. */
+function normalizeProviderOutput(output: unknown, targetIds: string[]): unknown {
+  if (typeof output !== "object" || output === null) return output;
+  const record = output as Record<string, unknown>;
+  if (typeof record.verifications !== "object" || record.verifications === null || Array.isArray(record.verifications)) return output;
+  const keyed = record.verifications as Record<string, unknown>;
+  return {
+    ...record,
+    verifications: targetIds.map((entrypointId) => {
+      const value = keyed[entrypointId];
+      return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? { entrypointId, ...(value as Record<string, unknown>) }
+        : { entrypointId, scenarios: [] };
+    }),
+  };
 }

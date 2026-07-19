@@ -26,7 +26,7 @@ export async function ensurePrReport(
   const assessment = await findImpactAssessment(analysisId);
   if (!assessment) throw new Error(`PR impact assessment is missing for analysis ${analysisId}`);
   const evidence = buildReportEvidence(analysis, assessment);
-  let semanticInput: PrSemanticInput = { version: 1, enabled: false, changedHunks: [], targets: [] };
+  let semanticInput: PrSemanticInput = { version: 2, enabled: false, repository: null, sourceReferences: [], changedHunks: [], targets: [] };
   let guidance: SemanticGuidanceState = { status: "not_requested", notice: null };
   if (analysis.status === "ready" && repositoryReader) {
     try {
@@ -78,6 +78,18 @@ export async function ensurePrReport(
   if (guidance.status === "fallback" && !llmError) llmError = "PR semantic source context unavailable";
   const markdown = renderReport(evidence, semanticResult, guidance, semanticInput);
   await persistReadyReport({ analysisId, evidence, semanticInput, semanticResult, markdown, model, providerResponseId, inputTokens, outputTokens, llmStatus, llmError });
-  log("info", "PR report generation completed", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus, semanticTargetCount: semanticInput.targets.length, semanticSummaryCount: semanticResult?.changeSummaries.length ?? 0, durationMs: Date.now() - startedAt });
+  log("info", "PR report generation completed", {
+    repoId: analysis.repoId,
+    pullRequestNumber: analysis.pullRequestNumber,
+    headSha: analysis.headSha,
+    llmStatus,
+    semanticInputVersion: semanticInput.version,
+    semanticHunkCount: semanticInput.changedHunks.length,
+    semanticTargetCount: semanticInput.targets.length,
+    semanticAnchorCount: semanticInput.targets.reduce((total, target) => total + target.anchors.length, 0),
+    semanticSummaryCount: semanticResult?.changeSummaries.length ?? 0,
+    semanticScenarioCount: semanticResult?.verifications.reduce((total, verification) => total + verification.scenarios.length, 0) ?? 0,
+    durationMs: Date.now() - startedAt,
+  });
   return { markdown, reused: false, llmStatus };
 }

@@ -1,5 +1,5 @@
 import type { ImpactAssessmentItem } from "../impact/impact-assessment.js";
-import type { PrSemanticInput, PrSemanticResult, ReportEvidence, SemanticGuidanceState } from "./report-types.js";
+import type { PrSemanticInput, PrSemanticResult, ReportEvidence, SemanticGuidanceState, SourceContextItem, SourceRevision } from "./report-types.js";
 
 const maxImpactMapEntrypoints = 8;
 const maxImpactMapNodes = 24;
@@ -16,7 +16,7 @@ export function renderReport(
 
   const lines = ["## Change Impact Report", ""];
   if (guidance.status === "fallback" && guidance.notice) {
-    lines.push(`> **AI-assisted guidance unavailable:** ${guidance.notice} This report still contains deterministic dependency evidence.`, "");
+    lines.push(`> **AI-assisted guidance unavailable:** ${guidance.notice} This report keeps deterministic dependency evidence, but does not invent verification scenarios.`, "");
   }
   lines.push("### What changed", "");
   const summaries = semantic?.changeSummaries ?? [];
@@ -25,34 +25,38 @@ export function renderReport(
 
   const verificationByTarget = new Map((semantic?.verifications ?? []).map((item) => [item.entrypointId, item]));
   const prioritized = evidence.impactAssessment.items.filter((item) => item.tier === "primary" || item.tier === "secondary");
-  if (prioritized.length) {
+  const scenarioTargets = prioritized.filter((item) => (verificationByTarget.get(targetIdFor(item))?.scenarios.length ?? 0) > 0);
+  if (scenarioTargets.length) {
     lines.push("### What to verify before merging", "");
-    for (const [index, item] of prioritized.entries()) {
-      const targetId = targetIdFor(item);
-      const checks = verificationByTarget.get(targetId)?.checks ?? [];
-      lines.push(`${index + 1}. **${displayEntrypoint(item)}**`);
-      if (checks.length) lines.push(...checks.map((check) => `   - ${check.text}`));
-      else lines.push(`   - ${fallbackVerification(item, semantic, semanticInput)}`);
-      lines.push(`   - Why: ${humanImpactReason(item, evidence)}`, "");
+    let scenarioNumber = 1;
+    for (const item of scenarioTargets) {
+      const scenarios = verificationByTarget.get(targetIdFor(item))!.scenarios;
+      for (const scenario of scenarios) {
+        lines.push(`${scenarioNumber}. **${scenario.title}**`, `   _Route: ${displayEntrypoint(item)}_`, "");
+        if (scenario.setup) lines.push(`   **Setup:** ${scenario.setup}`, "");
+        lines.push("   **Do:**", ...scenario.actions.map((action) => `   - ${action}`), "", "   **Expected:**", ...scenario.expected.map((expected) => `   - ${expected}`), "");
+        lines.push(`   **Why:** ${humanImpactReason(item, evidence, semanticInput)}`, "");
+        scenarioNumber += 1;
+      }
     }
   }
 
   const technical = evidence.impactAssessment.items.filter((item) => item.tier === "technical_only");
   if (technical.length) {
-    lines.push("### Technical impact", "", ...technical.map((item) => `- ${item.reason}`), "");
+    lines.push("### Technical impact", "", ...technical.map((item) => `- ${technicalReason(item)}`), "");
   }
   const evidenceOnly = evidence.impactAssessment.items.filter((item) => item.tier === "evidence_only");
-  if (evidenceOnly.length) lines.push("### Evidence requiring manual review", "", ...evidenceOnly.map((item) => `- ${item.reason}`), "");
+  if (evidenceOnly.length) lines.push("### Evidence requiring manual review", "", ...evidenceOnly.map((item) => `- ${displayEntrypoint(item)} has verified reachability, but the changed code has no reliable technical classification.`), "");
 
-  lines.push(...renderTechnicalEvidence(evidence), "", footer(evidence));
+  lines.push(...renderTechnicalEvidence(evidence, semanticInput, prioritized.filter((item) => !scenarioTargets.includes(item))), "", footer(evidence));
   return lines.join("\n");
 }
 
 export function targetIdFor(item: Pick<ImpactAssessmentItem, "path">): string { return `entry:${item.path}`; }
 
 function deterministicChangeSummary(evidence: ReportEvidence): string[] {
-  if (evidence.changedSymbols.length) return evidence.changedSymbols.slice(0, 8).map((symbol) => `Changed ${symbol.changeKind} symbol \`${symbol.name}\` in \`${symbol.filePath}\`.`);
-  if (evidence.changedFiles.length) return evidence.changedFiles.slice(0, 8).map((file) => `Changed ${file.status} file \`${file.path}\`.`);
+  if (evidence.changedSymbols.length) return evidence.changedSymbols.slice(0, 8).map((symbol) => `${capitalize(symbol.changeKind)} ${formatSymbolName(symbol.name)}.`);
+  if (evidence.changedFiles.length) return evidence.changedFiles.slice(0, 8).map((file) => `${capitalize(file.status)} ${friendlyPathLabel(file.path)}.`);
   return ["No graph-relevant source change was identified."];
 }
 
@@ -61,35 +65,29 @@ function displayEntrypoint(item: ImpactAssessmentItem): string {
   return routePath(item.path);
 }
 
-function humanImpactReason(item: ImpactAssessmentItem, evidence: ReportEvidence): string {
+function humanImpactReason(item: ImpactAssessmentItem, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {
   const route = item.kind === "page" ? "page" : "API endpoint";
   if (item.impact === "direct") return `This ${route} changed directly.`;
+  const source = changedSourceLabel(item, evidence, input);
+  const directBinding = input?.targets.find((target) => target.id === targetIdFor(item))?.anchors.some((anchor) => anchor.kind === "dependency_use" && anchor.path === item.path) ?? false;
+  if (item.dependencyPath.length === 2 && directBinding) return `This ${route} imports the modified ${source}.`;
+  if (item.dependencyPath.length === 2) return `The modified ${source} has a verified dependency path to this ${route}.`;
+  return `A verified dependency chain connects the modified ${source} to this ${route}.`;
+}
+
+function changedSourceLabel(item: ImpactAssessmentItem, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {
+  const hunk = input?.changedHunks.find((candidate) => candidate.path === item.changedSeedPath && candidate.symbolName);
+  if (hunk?.symbolName) return formatSymbolName(hunk.symbolName);
   const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === item.changedSeedPath);
-  const source = symbol ? `modified \`${symbol.name}\` ${symbolNoun(symbol.name, item.technicalRole)}` : `modified \`${item.changedSeedPath}\``;
-  if (item.dependencyPath.length === 2) return `This ${route} imports the ${source}.`;
-  const bridge = item.dependencyPath[1];
-  return bridge ? `The ${source} is used by this ${route} through \`${bridge}\`.` : `The ${source} is used by this ${route}.`;
+  return symbol ? formatSymbolName(symbol.name) : friendlyPathLabel(item.changedSeedPath);
 }
 
-function symbolNoun(name: string, role: ImpactAssessmentItem["technicalRole"]): string {
-  if (role === "presentation") return "component";
-  if (role === "utility") return "helper";
-  if (role === "application") return "module";
-  return name.endsWith("Service") ? "service" : "module";
+function technicalReason(item: ImpactAssessmentItem): string {
+  return `${capitalize(item.technicalRole)} change is technically connected to ${displayEntrypoint(item)}; it is retained as evidence rather than promoted to a customer-flow check.`;
 }
 
-function fallbackVerification(item: ImpactAssessmentItem, semantic: PrSemanticResult | null, input: PrSemanticInput | undefined): string {
-  const hunkPath = new Map(input?.changedHunks.map((hunk) => [hunk.id, hunk.path]) ?? []);
-  const summary = semantic?.changeSummaries.find((candidate) => candidate.hunkIds.some((id) => hunkPath.get(id) === item.changedSeedPath));
-  if (summary) return `Confirm this changed behavior: ${summary.summary}`;
-  return `Review the user-visible behavior on this ${item.kind === "page" ? "page" : "API endpoint"}.`;
-}
-
-/**
- * Keeps audit data available without making every PR comment a dependency-list
- * scroll. The graph derives solely from deterministic verified paths.
- */
-function renderTechnicalEvidence(evidence: ReportEvidence): string[] {
+/** Keeps audit data accessible without turning every PR comment into a path dump. */
+function renderTechnicalEvidence(evidence: ReportEvidence, input: PrSemanticInput | undefined, unavailable: ImpactAssessmentItem[]): string[] {
   const affectedCount = evidence.affectedItems.length;
   const noun = affectedCount === 1 ? "affected file" : "affected files";
   const lines = [
@@ -105,9 +103,35 @@ function renderTechnicalEvidence(evidence: ReportEvidence): string[] {
     "",
     "Red = changed source · Blue = affected route/API · Dashed gray = technical-only reachability.",
   ];
-  if (evidence.changedSymbols.length) lines.push("", "**Changed symbols**", ...evidence.changedSymbols.map((symbol) => `- ${symbol.changeKind}: \`${symbol.name}\` in \`${symbol.filePath}\``));
+  if (evidence.changedSymbols.length) {
+    lines.push("", "### Changed source");
+    for (const symbol of evidence.changedSymbols) lines.push(`- ${symbol.changeKind}: ${sourceReference(symbol.name, symbol.filePath, input, evidence)}`);
+  }
+  if (unavailable.length) {
+    lines.push("", "### Affected routes without a source-grounded scenario");
+    for (const item of unavailable) lines.push(`- ${displayEntrypoint(item)} — the available source did not contain a supported user interaction, state, or contract anchor.`);
+  }
   lines.push("", `- ${evidence.unresolvedImportCount} unresolved import(s)`, "", "</details>");
   return lines;
+}
+
+function sourceReference(name: string, filePath: string, input: PrSemanticInput | undefined, evidence: ReportEvidence): string {
+  const label = `\`${name}\``;
+  const anchor = input?.targets.flatMap((target) => target.anchors).find((candidate) => candidate.path === filePath && candidate.kind === "changed_declaration");
+  const hunk = input?.changedHunks.find((candidate) => candidate.path === filePath);
+  const reference = input?.sourceReferences.find((candidate) => candidate.path === filePath && (candidate.symbolName === name || candidate.symbolName === null));
+  const revision = anchor?.revision ?? hunk?.revision ?? reference?.revision;
+  const startLine = anchor?.startLine ?? (revision === "base" ? hunk?.beforeStartLine : hunk?.afterStartLine) ?? reference?.startLine;
+  const endLine = anchor?.endLine ?? (revision === "base" ? hunk?.beforeEndLine : hunk?.afterEndLine) ?? reference?.endLine;
+  const url = sourceUrl(input, filePath, revision, startLine, endLine, evidence);
+  return url ? `[${label} ↗](${url})` : label;
+}
+
+function sourceUrl(input: PrSemanticInput | undefined, filePath: string, revision: SourceRevision | undefined, startLine: number | undefined, endLine: number | undefined, evidence: ReportEvidence): string | null {
+  if (!input?.repository || !revision || !startLine || !endLine) return null;
+  const sha = revision === "base" ? evidence.baseSha : evidence.headSha;
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${encodeURIComponent(input.repository.owner)}/${encodeURIComponent(input.repository.name)}/blob/${sha}/${encodedPath}#L${startLine}-L${endLine}`;
 }
 
 function renderImpactMap(evidence: ReportEvidence): string[] {
@@ -118,15 +142,14 @@ function renderImpactMap(evidence: ReportEvidence): string[] {
     const candidateNodes = new Set([...nodes, ...item.dependencyPath]);
     if (paths.length > 0 && candidateNodes.size > maxImpactMapNodes) break;
     nodes.clear();
-    for (const path of candidateNodes) nodes.add(path);
+    for (const node of candidateNodes) nodes.add(node);
     paths.push(item);
   }
   if (!paths.length) return ["flowchart LR", '  empty["No route or API impact path is available."]'];
 
-  const nodeIds = new Map([...nodes].sort((left, right) => left.localeCompare(right)).map((path, index) => [path, `n${index + 1}`]));
+  const nodeIds = new Map([...nodes].sort((left, right) => left.localeCompare(right)).map((node, index) => [node, `n${index + 1}`]));
   const lines = ["flowchart LR"];
-  for (const [path, id] of nodeIds) lines.push(`  ${id}["${mermaidNodeLabel(path, evidence, paths)}"]`);
-
+  for (const [node, id] of nodeIds) lines.push(`  ${id}["${mermaidNodeLabel(node, evidence, paths)}"]`);
   const edgeKinds = new Map<string, "product" | "technical">();
   for (const item of paths) {
     for (let index = 0; index < item.dependencyPath.length - 1; index += 1) {
@@ -143,7 +166,6 @@ function renderImpactMap(evidence: ReportEvidence): string[] {
     const toId = nodeIds.get(to ?? "");
     if (fromId && toId) lines.push(`  ${fromId} ${kind === "technical" ? "-.->" : "-->"} ${toId}`);
   }
-
   const changed = uniqueNodeIds(paths.map((item) => item.changedSeedPath), nodeIds);
   const entrypoints = uniqueNodeIds(paths.map((item) => item.path), nodeIds);
   const technical = uniqueNodeIds(paths.filter((item) => item.tier === "technical_only").flatMap((item) => item.dependencyPath), nodeIds)
@@ -156,31 +178,35 @@ function renderImpactMap(evidence: ReportEvidence): string[] {
 }
 
 function uniqueNodeIds(paths: string[], nodeIds: Map<string, string>): string[] {
-  return [...new Set(paths.map((path) => nodeIds.get(path)).filter((id): id is string => Boolean(id)))];
+  return [...new Set(paths.map((item) => nodeIds.get(item)).filter((id): id is string => Boolean(id)))];
 }
 
-function mermaidNodeLabel(path: string, evidence: ReportEvidence, items: ImpactAssessmentItem[]): string {
-  const entrypoint = items.find((item) => item.path === path);
+function mermaidNodeLabel(node: string, evidence: ReportEvidence, items: ImpactAssessmentItem[]): string {
+  const entrypoint = items.find((item) => item.path === node);
   if (entrypoint) return mermaidLabel(`${displayEntrypoint(entrypoint)} (${entrypoint.kind === "page" ? "page" : "API"})`);
-  const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === path);
-  if (symbol) return mermaidLabel(`${symbol.name} (changed)`);
-  const changed = items.some((item) => item.changedSeedPath === path);
-  const compactPath = path.replace(/^src\//, "").replace(/\.(?:ts|tsx|js|jsx|mjs|cjs)$/, "");
-  return mermaidLabel(changed ? `${compactPath} (changed)` : compactPath);
+  const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === node);
+  if (symbol) return mermaidLabel(`${humanizeIdentifier(symbol.name)} (changed)`);
+  const changed = items.some((item) => item.changedSeedPath === node);
+  return mermaidLabel(`${friendlyPathLabel(node)}${changed ? " (changed)" : ""}`);
 }
 
-function mermaidLabel(value: string): string {
-  return value.replace(/["\\]/g, "").replace(/[\r\n]/g, " ");
+function mermaidLabel(value: string): string { return value.replace(/["\\]/g, "").replace(/[\r\n]/g, " "); }
+function formatSymbolName(name: string): string { return `\`${name}\``; }
+function friendlyPathLabel(value: string): string {
+  const normalized = value.replace(/^src\//, "").replace(/\.(?:ts|tsx|js|jsx|mjs|cjs)$/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  const leaf = parts.at(-1) === "index" ? parts.at(-2) ?? "module" : parts.at(-1) ?? "module";
+  return `${humanizeIdentifier(leaf)} module`;
 }
-
-function routePath(path: string): string {
-  const normalized = path.replace(/^src\//, "").replace(/\.(?:ts|tsx|js|jsx|mjs|cjs)$/, "");
+function humanizeIdentifier(value: string): string { return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function capitalize(value: string): string { return value ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value; }
+function routePath(pathValue: string): string {
+  const normalized = pathValue.replace(/^src\//, "").replace(/\.(?:ts|tsx|js|jsx|mjs|cjs)$/, "");
   if (normalized.startsWith("app/")) {
     const route = normalized.slice(4).replace(/\/(?:page|route)$/, "");
     return route ? `/${route}` : "/";
   }
   if (normalized.startsWith("pages/")) return `/${normalized.slice(6).replace(/^index$/, "")}`.replace(/\/$/, "") || "/";
-  return path;
+  return friendlyPathLabel(pathValue);
 }
-
 function footer(evidence: ReportEvidence): string { return `Analyzed base \`${evidence.baseSha}\` → head \`${evidence.headSha}\``; }

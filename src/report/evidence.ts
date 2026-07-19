@@ -6,7 +6,7 @@ export function buildReportEvidence(analysisInput: DeterministicPrAnalysis, impa
   const analysis = deterministicPrAnalysisSchema.parse(analysisInput);
   if (analysis.status === "ready" && analysis.affectedItems.some((item) => item.dependencyPath.length === 0)) throw new Error("ready PR analysis contains an affected item without dependency evidence");
   return {
-    version: 4,
+    version: 5,
     repoId: analysis.repoId,
     pullRequestNumber: analysis.pullRequestNumber,
     baseSha: analysis.baseSha,
