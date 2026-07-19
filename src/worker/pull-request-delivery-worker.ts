@@ -31,11 +31,13 @@ export async function processNextPullRequestDeliveryJob(): Promise<boolean> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "pull request comment delivery failed";
-    if (payload) await markPrCommentDeliveryFailed({ ...payload, analysisId: payload.prAnalysisId, error: message });
-    await retryOrFailJob(job, error);
+    const outcome = await retryOrFailJob(job, error);
+    // A retried delivery is still pending. Recording it as failed made the
+    // mutable pointer lie even though a later attempt could update GitHub.
+    if (payload && !outcome.retried) await markPrCommentDeliveryFailed({ ...payload, analysisId: payload.prAnalysisId, error: message });
     log("error", "pull request comment delivery failed", {
       jobId: job.id, repoId: payload?.repoId ?? null, pullRequestNumber: payload?.pullRequestNumber ?? null,
-      headSha: payload?.headSha ?? null, error: message, durationMs: Date.now() - startedAt,
+      headSha: payload?.headSha ?? null, error: message, errorKind: outcome.errorKind, retryScheduled: outcome.retried, durationMs: Date.now() - startedAt,
     });
   }
   return true;

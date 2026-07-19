@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
 
-import { db, pool } from "../storage/db.js";
+import { db } from "../storage/db.js";
 import { prCommentDeliveryTable } from "../storage/schema.js";
 
 export interface PrCommentDelivery {
@@ -157,27 +157,4 @@ export async function markPrCommentDeliveryFailed(input: {
     eq(prCommentDeliveryTable.desiredHeadSha, input.headSha),
     eq(prCommentDeliveryTable.desiredState, input.deliveryState),
   ));
-}
-
-export class PrCommentDeliveryBusyError extends Error {
-  override readonly name = "PrCommentDeliveryBusyError";
-  readonly code = "PR_COMMENT_DELIVERY_BUSY";
-}
-
-// PostgreSQL advisory locks serialize a single PR's external GitHub writes.
-// Use a non-blocking attempt: a queue worker must retry rather than consume a
-// database statement timeout waiting for a prior delivery to finish.
-export async function withPrCommentDeliveryLock<T>(repoId: number, pullRequestNumber: number, action: () => Promise<T>): Promise<T> {
-  const client = await pool.connect();
-  const key = `${repoId}:${pullRequestNumber}`;
-  let lockAcquired = false;
-  try {
-    const result = await client.query<{ acquired: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS acquired", [key]);
-    lockAcquired = result.rows[0]?.acquired === true;
-    if (!lockAcquired) throw new PrCommentDeliveryBusyError(`pull request comment delivery is already in progress for ${key}`);
-    return await action();
-  } finally {
-    if (lockAcquired) await client.query("SELECT pg_advisory_unlock(hashtext($1))", [key]).catch(() => undefined);
-    client.release();
-  }
 }

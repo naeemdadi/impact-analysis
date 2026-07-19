@@ -12,7 +12,6 @@ test("retry policy is bounded and uses the documented backoff", () => {
   assert.equal(classifyJobError({ status: 429 }), "transient");
   assert.equal(classifyJobError({ status: 503 }), "transient");
   assert.equal(classifyJobError({ status: 403 }), "permanent");
-  assert.equal(classifyJobError({ code: "PR_COMMENT_DELIVERY_BUSY" }), "transient");
 });
 
 test("technical roles suppress analytics while promoting application logic", () => {
