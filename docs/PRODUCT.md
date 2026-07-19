@@ -1,91 +1,45 @@
-We do NOT review code.
+We do **not** review code, generate code, or replace QA.
 
-We do NOT generate code.
+We answer one bounded question:
 
-We do NOT replace QA.
+> What should I verify before merging, and what evidence connects this change to it?
 
-We ONLY answer
+## Report contract
 
-"What should I verify before merging?"
+- The dependency graph proves reachability.
+- Technical roles prioritize that reachability.
+- AI may summarize supplied PR hunks and phrase suggestions for already-proven routes.
+- The report never says a regression exists or claims a workflow is exhaustive.
 
-# Final Output to User after PR
+## Example sticky comment
 
-🟡 Change Impact Report
+```md
+## Change Impact Report
 
-Impact Level: High
+### What changed
 
-────────────────────────────────────
+- Updates coupon calculation handling in the supplied pricing code.
 
-📍 Affected
+### Primary verification
 
-Pages
-• /checkout
-• /orders/[id]
-• /subscriptions
+1. **/checkout**
+   - Apply and remove a coupon, then verify the displayed total updates.
+   - Why: `src/lib/coupon.ts` → `src/app/checkout/page.tsx`
 
-API Routes
-• POST /api/checkout
-• POST /api/refunds
+2. **API /api/refunds**
+   - Verify a refund request still returns the expected calculated amount.
+   - Why: `src/lib/coupon.ts` → `src/app/api/refunds/route.ts`
 
-Components
-• CouponInput
-• PriceSummary
-• OrderSummary
+### Technical impact
 
-Shared Modules
-• CouponService
-• DiscountCalculator
+- Technical-only because changed `src/lib/analytics.ts` is classified as analytics; its reachability to `/checkout` is retained as evidence.
 
-────────────────────────────────────
+### Technical evidence
 
-🔍 Why?
+- Changed symbols: `calculateDiscount` in `src/lib/coupon.ts`
+- 0 unresolved imports
 
-CouponService is a shared dependency.
+Analyzed base `base-sha` → head `head-sha`
+```
 
-Dependency chain:
-
-CouponService
-├── CheckoutService
-│   └── /checkout
-├── RefundService
-│   └── POST /api/refunds
-└── SubscriptionService
-    └── /subscriptions
-
-────────────────────────────────────
-
-⚠️ Indirect Impact
-
-These areas were not modified in this PR but depend on the changed code:
-
-• Refunds
-• Subscription Billing
-
-────────────────────────────────────
-
-✅ Suggested Verification
-
-• Verify coupon application during checkout
-• Verify coupon removal
-• Verify price recalculation
-• Verify refund calculation
-• Verify subscription renewal with coupon
-
-────────────────────────────────────
-
-📊 Evidence
-
-Changed Symbols
-• CouponService
-• calculateDiscount()
-
-References
-• 12 import references
-• 5 entry points
-• 3 shared services
-
-────────────────────────────────────
-
-Summary
-
-This PR modifies a shared pricing service used by multiple entry points. Although only checkout files changed, refund and subscription flows also depend on the modified code.
+When AI assistance is disabled or semantic context is unavailable, the same report structure is rendered with deterministic changed-file/symbol summaries and generic route verification wording. It never invents a scenario.

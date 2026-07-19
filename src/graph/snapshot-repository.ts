@@ -176,9 +176,9 @@ export async function persistReadySnapshot(input: {
           blobSha: file.blobSha,
           kind: file.kind,
           classificationReason: file.classificationReason,
-          technicalRole: file.technicalRole ?? "unknown",
-          technicalRoleReason: file.technicalRoleReason ?? "not indexed",
-          technicalRoleStrength: file.technicalRoleStrength ?? "unknown",
+          technicalRole: file.technicalRole,
+          technicalRoleReason: file.technicalRoleReason,
+          technicalRoleStrength: file.technicalRoleStrength,
         })
         .onConflictDoUpdate({
           target: [graphFileTable.snapshotId, graphFileTable.path],
@@ -186,9 +186,9 @@ export async function persistReadySnapshot(input: {
             blobSha: file.blobSha,
             kind: file.kind,
             classificationReason: file.classificationReason,
-            technicalRole: file.technicalRole ?? "unknown",
-            technicalRoleReason: file.technicalRoleReason ?? "not indexed",
-            technicalRoleStrength: file.technicalRoleStrength ?? "unknown",
+            technicalRole: file.technicalRole,
+            technicalRoleReason: file.technicalRoleReason,
+            technicalRoleStrength: file.technicalRoleStrength,
           },
         })
         .returning({ id: graphFileTable.id });

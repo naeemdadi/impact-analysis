@@ -79,7 +79,7 @@ export async function handleInstallationRepositoriesEvent(
       trackedBranch: metadata.defaultBranch,
       isActive: true,
       accessState: "active",
-      semanticAiEnabled: true,
+      aiAssistanceEnabled: true,
     });
   }
 

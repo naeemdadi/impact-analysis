@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 import type { DeterministicPrAnalysis, ProductImpactKind } from "../impact/pr-impact-types.js";
-import type { ImpactAssessment } from "../impact/impact-assessment.js";
+import type { ImpactAssessment, ImpactAssessmentItem } from "../impact/impact-assessment.js";
 
-export type SummaryTemplate = "broad_shared_change" | "route_change" | "localized_change" | "no_graph_impact" | "insufficient_evidence";
+// PR semantic context includes at most twelve changed hunks. A model may
+// truthfully cite every supplied hunk in one summary or verification check.
+const maxChangedHunkReferences = 12;
 
 export interface ChangedHunk {
   id: string;
@@ -14,55 +16,88 @@ export interface ChangedHunk {
   afterExcerpt: string;
 }
 
-export interface FeatureVerificationTarget {
+export interface SourceContextItem {
+  id: string;
+  path: string;
+  blobSha: string;
+  startLine: number;
+  endLine: number;
+  excerpt: string;
+}
+
+export interface SemanticEntrypointTarget {
   id: string;
   path: string;
   kind: Extract<ProductImpactKind, "page" | "api_route">;
-  impact: "direct" | "indirect";
+  tier: "primary" | "secondary";
+  changedSeedPath: string;
   dependencyPath: string[];
-  title: string;
-  description: string;
-  scenarios: Array<{ id: string; title: string; steps: string[]; contextIds: string[] }>;
+  context: SourceContextItem[];
 }
 
-export interface ReportEvidence {
-  version: 3;
-  repoId: number;
-  pullRequestNumber: number;
-  baseSha: string;
-  headSha: string;
-  analysisStatus: DeterministicPrAnalysis["status"];
-  impactLevel: DeterministicPrAnalysis["impactLevel"];
-  insufficientReason: string | null;
-  unresolvedImportCount: number;
-  changedSymbols: Array<{ id: string; name: string; changeKind: string; filePath: string }>;
-  affectedItems: Array<{ id: string; path: string; kind: ProductImpactKind; impact: "direct" | "indirect"; dependencyPath: string[] }>;
-  // Bounded, source-backed inputs for suggestions. They are not reachability evidence.
-  featureTargets: FeatureVerificationTarget[];
+/** Exact, bounded source context that is permitted to leave the repository. */
+export interface PrSemanticInput {
+  version: 1;
+  enabled: boolean;
   changedHunks: ChangedHunk[];
-  impactAssessment: ImpactAssessment;
+  targets: SemanticEntrypointTarget[];
 }
 
-export interface ReportSelection {
-  summaryTemplate: SummaryTemplate;
-  verifications: Array<{ entrypointId: string; scenarioId: string; hunkIds: string[] }>;
+export interface SemanticChangeSummary {
+  hunkIds: string[];
+  summary: string;
 }
 
-export interface ReportSelectionCatalog {
-  summaryTemplates: SummaryTemplate[];
-  verificationTargets: Array<{ id: string; scenarioIds: string[]; allowedHunkIds: string[] }>;
+export interface SemanticVerification {
+  entrypointId: string;
+  checks: Array<{ text: string; hunkIds: string[]; contextIds: string[] }>;
 }
 
-export interface ReportSelectionResult {
-  selection: ReportSelection;
+export interface PrSemanticResult {
+  changeSummaries: SemanticChangeSummary[];
+  verifications: SemanticVerification[];
+}
+
+export interface SemanticAnalysisResult {
+  result: PrSemanticResult;
   providerResponseId: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
 }
 
-export interface ReportSelector { select(evidence: ReportEvidence, catalog: ReportSelectionCatalog): Promise<ReportSelectionResult>; }
+/** Safe, user-visible state for optional AI guidance. Never contains provider raw errors. */
+export interface SemanticGuidanceState {
+  status: "not_requested" | "completed" | "fallback";
+  notice: string | null;
+}
 
-export const reportSelectionSchema = z.object({
-  summaryTemplate: z.enum(["broad_shared_change", "route_change", "localized_change", "no_graph_impact", "insufficient_evidence"]),
-  verifications: z.array(z.object({ entrypointId: z.string(), scenarioId: z.string(), hunkIds: z.array(z.string()).max(4) })).max(5),
+export interface PrSemanticAnalyzer {
+  analyze(input: PrSemanticInput, evidence: Pick<ReportEvidence, "repoId" | "pullRequestNumber" | "headSha">): Promise<SemanticAnalysisResult>;
+}
+
+export interface ReportEvidence {
+  version: 4;
+  repoId: number;
+  pullRequestNumber: number;
+  baseSha: string;
+  headSha: string;
+  analysisStatus: DeterministicPrAnalysis["status"];
+  insufficientReason: string | null;
+  unresolvedImportCount: number;
+  changedFiles: DeterministicPrAnalysis["changedFiles"];
+  changedSymbols: Array<{ id: string; name: string; changeKind: string; filePath: string }>;
+  affectedItems: Array<{ id: string; path: string; kind: ProductImpactKind; impact: "direct" | "indirect"; dependencyPath: string[] }>;
+  impactAssessment: ImpactAssessment;
+}
+
+export const prSemanticResultSchema = z.object({
+  changeSummaries: z.array(z.object({ hunkIds: z.array(z.string()).min(1).max(maxChangedHunkReferences), summary: z.string().min(1).max(400) })).max(12),
+  verifications: z.array(z.object({
+    entrypointId: z.string(),
+    checks: z.array(z.object({ text: z.string().min(1).max(400), hunkIds: z.array(z.string()).min(1).max(maxChangedHunkReferences), contextIds: z.array(z.string()).min(1).max(6) })).max(3),
+  })).max(5),
 });
+
+export function isPrioritized(item: ImpactAssessmentItem): item is ImpactAssessmentItem & { tier: "primary" | "secondary" } {
+  return item.tier === "primary" || item.tier === "secondary";
+}

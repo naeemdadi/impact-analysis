@@ -4,7 +4,6 @@ import { buildAndPersistBaselineGraph } from "../graph/build-baseline.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
-import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const installationSyncPayloadSchema = z.object({
@@ -35,7 +34,6 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
       const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildAndPersistBaselineGraph(
         { repoId, reuseReadySnapshot: true }, repositoryReader,
       ));
-      await enqueueFeatureIndex({ deliveryId: job.deliveryId, repoId, branch: result.branch, sha: result.sha, mode: "full" });
       log("info", "baseline snapshot ready", {
         jobId: job.id,
         repoId,

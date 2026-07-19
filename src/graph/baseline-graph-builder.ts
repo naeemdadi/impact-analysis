@@ -223,12 +223,12 @@ export function classifyTechnicalRole(pathValue: string, kind: GraphFileKind, so
   if (/(?:^|\/)(?:test|tests|__tests__|spec)(?:\/|\.|$)/.test(lower)) return { technicalRole: "testing", technicalRoleReason: "Test path convention", technicalRoleStrength: "strong" };
   if (/(?:components\/ui|\/ui\/|design-system|primitives)/.test(lower)) return { technicalRole: "ui_primitive", technicalRoleReason: "UI primitive path convention", technicalRoleStrength: "strong" };
   if (/(?:analytics|telemetry|tracking|segment|posthog|mixpanel)/.test(lower) || /(?:useanalytics|track\(|capture\()/i.test(text)) return { technicalRole: "analytics", technicalRoleReason: "Analytics path or API signal", technicalRoleStrength: "strong" };
-  if (/(?:db|database|supabase|storage|cloudinary|queue|email|provider|infra)/.test(lower)) return { technicalRole: "infrastructure", technicalRoleReason: "Infrastructure path convention", technicalRoleStrength: "strong" };
-  if (kind === "page" || kind === "api_route" || kind === "component") return { technicalRole: "presentation", technicalRoleReason: "Entrypoint/component graph role", technicalRoleStrength: "strong" };
+  if (/(?:^|\/)(?:db|database|cache|queue|transport|adapter|storage|cloudinary|provider|infra)(?:\/|$)/.test(lower)) return { technicalRole: "infrastructure", technicalRoleReason: "Infrastructure path convention", technicalRoleStrength: "strong" };
+  if (kind === "component") return { technicalRole: "presentation", technicalRoleReason: "Component graph role", technicalRoleStrength: "strong" };
+  if (kind === "page" || kind === "api_route") return { technicalRole: "application", technicalRoleReason: "User-facing entrypoint graph role", technicalRoleStrength: "strong" };
   if (/(?:utils?|helpers?|format|constants?)/.test(lower)) return { technicalRole: "utility", technicalRoleReason: "Utility path convention", technicalRoleStrength: "heuristic" };
-  if (/(?:service|pricing|payment|billing|coupon|review|order|seller|auth)/.test(lower)) return { technicalRole: "business_logic", technicalRoleReason: "Business-oriented module naming convention", technicalRoleStrength: "heuristic" };
-  if (kind === "shared_module") return { technicalRole: "application_module", technicalRoleReason: "Application code without a stronger role", technicalRoleStrength: "heuristic" };
-  return { technicalRole: "unknown", technicalRoleReason: "No reliable technical-role rule", technicalRoleStrength: "unknown" };
+  if (kind === "shared_module" || kind === "layout" || kind === "loading" || kind === "error_boundary" || kind === "metadata") return { technicalRole: "application", technicalRoleReason: "Application code without a stronger technical role", technicalRoleStrength: "heuristic" };
+  return { technicalRole: "unknown", technicalRoleReason: "No deterministic technical-role rule", technicalRoleStrength: "unknown" };
 }
 
 function isCodePath(filePath: string): boolean { return codePathPattern.test(filePath); }

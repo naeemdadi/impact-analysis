@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { findCompletedPrAnalysis, createBuildingPrAnalysis, failPrAnalysis, getPrAnalysisId, persistPrAnalysis } from "../impact/pr-analysis-repository.js";
-import { buildPullRequestImpactAnalysis } from "../impact/pr-impact-service.js";
+import { buildPullRequestImpactArtifacts } from "../impact/pr-impact-service.js";
+import { assessImpact } from "../impact/impact-assessment.js";
+import { ensureImpactAssessment, findImpactAssessment } from "../impact/pr-impact-assessment-repository.js";
 import { ensurePrReport } from "../report/report-service.js";
 import { enqueuePullRequestDelivery } from "../delivery/pr-comment-delivery-queue.js";
 import { requestPrCommentDelivery } from "../delivery/pr-comment-delivery-repository.js";
@@ -29,6 +31,12 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     const parsed = payload;
     const existing = await findCompletedPrAnalysis(parsed);
     if (existing) {
+      // A worker can crash after persisting raw graph facts but before storing
+      // the policy. Repair that deterministic gap before reusing the report.
+      if (!await findImpactAssessment(await getPrAnalysisId(parsed))) {
+        const artifacts = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactArtifacts(parsed, new GitHubRepositoryReader()));
+        await ensureImpactAssessment(await getPrAnalysisId(parsed), assessImpact(existing, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
+      }
       const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(existing, undefined, new GitHubRepositoryReader()));
       await enqueueDeliverySafely({
         deliveryId: job.deliveryId,
@@ -53,8 +61,10 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
       headSha: payload.headSha,
       deliveryState: "running",
     });
-    const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactAnalysis(parsed, new GitHubRepositoryReader()));
+    const artifacts = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactArtifacts(parsed, new GitHubRepositoryReader()));
+    const result = artifacts.analysis;
     await persistPrAnalysis(result);
+    await ensureImpactAssessment(analysisId, assessImpact(result, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
     const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(result, undefined, new GitHubRepositoryReader()));
     await enqueueDeliverySafely({
       deliveryId: job.deliveryId,

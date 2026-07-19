@@ -34,7 +34,7 @@ export async function updateGraphIncrementally(
   const ready = await findReadySnapshotByIdentity({ repoId: request.repoId, branch: request.branch, sha: request.afterSha });
   if (ready) {
     log("info", "incremental graph update reused current snapshot", { repoId: request.repoId, branch: request.branch, afterSha: request.afterSha, snapshotId: ready.snapshotId });
-    return { ...ready, featureIndexPaths: [] };
+    return { ...ready, reanalyzedPaths: [] };
   }
 
   const comparison = await repositoryReader.compareCommits({ ...githubInput, beforeSha: request.beforeSha, afterSha: request.afterSha });
@@ -75,7 +75,7 @@ export async function updateGraphIncrementally(
         metadata: { buildMode: "incremental", baseSnapshotId: base.snapshotId, changedFileCount: incremental.changedFileCount, reanalyzedFileCount: incremental.reanalyzedPaths.length },
       });
       log("info", "incremental graph update completed", { repoId: result.repoId, branch: result.branch, afterSha: result.sha, snapshotId: result.snapshotId, buildMode: result.buildMode, changedFileCount: result.changedFileCount, reanalyzedFileCount: result.reanalyzedFileCount, durationMs: result.buildDurationMs });
-      return { ...result, featureIndexPaths: featureIndexPaths(comparison.changes, incremental.reanalyzedPaths) };
+      return { ...result, reanalyzedPaths: incremental.reanalyzedPaths };
     } catch (error) {
       await markSnapshotFailed(snapshotId, error instanceof Error ? error.message : "incremental snapshot persistence failed", Date.now() - startedAt);
       throw error;
@@ -92,11 +92,7 @@ async function fullFallback(request: IncrementalGraphUpdateRequest, repositoryRe
     repoId: request.repoId, sha: request.afterSha, reuseReadySnapshot: true,
     buildMetadata: { buildMode: "full_fallback", fallbackReason: reason, changedFileCount: changedPaths.length },
   }, repositoryReader);
-  return { ...result, featureIndexPaths: changedPaths };
-}
-
-function featureIndexPaths(changes: Array<{ path: string; previousPath?: string }>, reanalyzedPaths: string[]): string[] {
-  return [...new Set([...reanalyzedPaths, ...changes.flatMap((change) => [change.path, ...(change.previousPath ? [change.previousPath] : [])])])].sort();
+  return { ...result, reanalyzedPaths: changedPaths.sort() };
 }
 
 function emptyTargetSource(identity: { repoId: number; owner: string; name: string; branch: string }, sha: string, allFilePaths: string[]): RepositorySource {

@@ -34,7 +34,7 @@ Ship a reliable GitHub App that answers change impact questions for pull request
 ## Product Behavior Rules
 
 - No impact claim without dependency evidence
-- If evidence is weak report partial confidence
+- If evidence is weak return insufficient evidence and make no impact claim
 - If path resolution fails show unresolved imports in evidence
 - Deterministic facts come first. LLM text comes second.
 

@@ -41,6 +41,5 @@ export async function runWithDeadline<T>(timeoutMs: number, action: (signal: Abo
 export function timeoutForJob(jobType: string): number {
   if (jobType === "installation.sync" || jobType === "branch.reconcile") return 8 * 60_000;
   if (jobType === "branch.push" || jobType === "pull_request.analyze") return 5 * 60_000;
-  if (jobType === "feature.index") return 3 * 60_000;
   return 30_000;
 }

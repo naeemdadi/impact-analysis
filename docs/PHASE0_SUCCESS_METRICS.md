@@ -22,7 +22,7 @@ Define measurable outcomes for MVP readiness and hackathon demo reliability.
 
 - Direct vs indirect labeling consistency: 100 percent on acceptance scenarios
 - Impact level rule consistency with `SPEC.md`: 100 percent on acceptance scenarios
-- Partial confidence behavior when evidence is weak: 100 percent in forced failure test
+- Insufficient-evidence behavior when required graph facts are unavailable: 100 percent in forced failure test
 
 ## Operational Metrics
 

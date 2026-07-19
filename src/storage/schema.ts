@@ -30,9 +30,9 @@ export const repoConfigTable = pgTable("repo_config", {
   // Why this configuration is active or inactive: active, suspended, removed, or deleted.
   // This prevents a later unsuspend event from reactivating a repository that was removed.
   accessState: text("access_state").notNull().default("active"),
-  // Per-repository control for bounded source context sent to OpenAI.
-  // Enabled by default; graph analysis stays deterministic regardless of this setting.
-  semanticAiEnabled: boolean("semantic_ai_enabled").notNull().default(true),
+  // Explicit control for bounded PR source context sent to OpenAI. Graph facts
+  // and reachability are deterministic regardless of this setting.
+  aiAssistanceEnabled: boolean("ai_assistance_enabled").notNull().default(true),
   // Row creation timestamp.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Last config update timestamp.
@@ -74,7 +74,7 @@ export const graphSnapshotTable = pgTable(
     symbolCount: integer("symbol_count").notNull().default(0),
     // Number of directed import relationships stored in this snapshot.
     importCount: integer("import_count").notNull().default(0),
-    // Number of local imports that could not be resolved; later phases use this to lower confidence.
+    // Number of local imports that could not be resolved; retained as report evidence.
     unresolvedImportCount: integer("unresolved_import_count").notNull().default(0),
     // End-to-end fetch, analysis, and persistence duration for Phase 2 build metrics.
     buildDurationMs: integer("build_duration_ms"),
@@ -111,9 +111,9 @@ export const graphFileTable = pgTable(
     kind: text("kind").notNull(),
     // Explicit filesystem/AST rule that produced kind; used as report evidence rather than inference.
     classificationReason: text("classification_reason").notNull(),
-    technicalRole: text("technical_role").notNull().default("unknown"),
-    technicalRoleReason: text("technical_role_reason").notNull().default("not indexed"),
-    technicalRoleStrength: text("technical_role_strength").notNull().default("unknown"),
+    technicalRole: text("technical_role").notNull(),
+    technicalRoleReason: text("technical_role_reason").notNull(),
+    technicalRoleStrength: text("technical_role_strength").notNull(),
   },
   (table) => [
     // A repository path can appear only once in the current materialized graph.
@@ -233,9 +233,11 @@ export const prReportTable = pgTable(
     prAnalysisId: uuid("pr_analysis_id").notNull().references(() => prAnalysisTable.id),
     // building or ready; a model failure still produces a ready fallback report.
     status: text("status").notNull(),
-    confidence: text("confidence").notNull(),
     evidenceJson: jsonb("evidence_json").$type<Record<string, unknown>>().notNull(),
-    selectionJson: jsonb("selection_json").$type<Record<string, unknown>>().notNull(),
+    // Exact bounded source packet that was permitted to leave the repository.
+    semanticInputJson: jsonb("semantic_input_json").$type<Record<string, unknown>>().notNull(),
+    // Validated model output. Null for deterministic fallback reports.
+    semanticResultJson: jsonb("semantic_result_json").$type<Record<string, unknown>>(),
     markdown: text("markdown").notNull(),
     model: text("model"),
     providerResponseId: text("provider_response_id"),
@@ -278,46 +280,6 @@ export const prCommentDeliveryTable = pgTable(
     uniqueIndex("pr_comment_delivery_repo_pr_unique").on(table.repoId, table.pullRequestNumber),
   ],
 );
-
-// One mutable source-backed feature description for a tracked-branch page or API route.
-// It is contextual guidance only; graph facts remain the evidence for reachability.
-export const featureCardTable = pgTable(
-  "feature_card",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
-    branch: text("branch").notNull(),
-    entryPath: text("entry_path").notNull(),
-    entryKind: text("entry_kind").notNull(),
-    // Hash of the entrypoint and selected reachable source blobs used as context.
-    sourceFingerprint: text("source_fingerprint").notNull(),
-    sourceCommitSha: text("source_commit_sha").notNull(),
-    // ready when validated semantic guidance exists; unavailable records why it does not.
-    status: text("status").notNull(),
-    cardJson: jsonb("card_json").$type<Record<string, unknown>>(),
-    provenanceJson: jsonb("provenance_json").$type<Record<string, unknown>>().notNull(),
-    model: text("model"),
-    providerResponseId: text("provider_response_id"),
-    failureReason: text("failure_reason"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("feature_card_repo_branch_entry_unique").on(table.repoId, table.branch, table.entryPath),
-    index("feature_card_repo_branch_fingerprint_idx").on(table.repoId, table.branch, table.sourceFingerprint),
-  ],
-);
-
-// Source-backed semantic ownership for one module. It is contextual metadata,
-// never a replacement for deterministic import evidence.
-export const moduleDomainCardTable = pgTable("module_domain_card", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
-  branch: text("branch").notNull(), path: text("path").notNull(), sourceFingerprint: text("source_fingerprint").notNull(),
-  status: text("status").notNull(), domainJson: jsonb("domain_json").$type<Record<string, unknown>>(), provenanceJson: jsonb("provenance_json").$type<Record<string, unknown>>().notNull(),
-  model: text("model"), providerResponseId: text("provider_response_id"), failureReason: text("failure_reason"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex("module_domain_card_repo_branch_path_unique").on(table.repoId, table.branch, table.path)]);
 
 // Auditable policy output between raw deterministic analysis and presentation.
 export const prImpactAssessmentTable = pgTable("pr_impact_assessment", {

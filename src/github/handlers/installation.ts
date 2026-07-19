@@ -43,7 +43,7 @@ export async function handleInstallationEvent(payload: unknown, context: Install
           trackedBranch: metadata.defaultBranch,
           isActive: true,
           accessState: "active",
-          semanticAiEnabled: true,
+          aiAssistanceEnabled: true,
         });
       }
       await enqueueInstallationSync({

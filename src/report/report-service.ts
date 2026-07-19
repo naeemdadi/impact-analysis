@@ -1,83 +1,83 @@
 import { getPrAnalysisId } from "../impact/pr-analysis-repository.js";
+import { findImpactAssessment } from "../impact/pr-impact-assessment-repository.js";
 import type { DeterministicPrAnalysis } from "../impact/pr-impact-types.js";
-import { buildReportEvidence } from "./evidence.js";
-import { OpenAIReportSelector } from "./openai-report-selector.js";
-import { createBuildingReport, findReadyReport, persistReadyReport } from "./pr-report-repository.js";
-import { defaultSelection, buildSelectionCatalog, renderReport, validateSelection } from "./templates.js";
-import type { ReportSelector } from "./report-types.js";
 import type { RepositoryReader } from "../graph/types.js";
+import { log } from "../server/logger.js";
+import { buildReportEvidence } from "./evidence.js";
+import { OpenAIPrSemanticAnalyzer } from "./openai-pr-semantic-analyzer.js";
 import { buildPrSemanticContext } from "./pr-semantic-context.js";
-import { errorMessage, log } from "../server/logger.js";
-import { assessImpact } from "../impact/impact-assessment.js";
-import { ensureImpactAssessment } from "../impact/pr-impact-assessment-repository.js";
+import { createBuildingReport, findReadyReport, persistReadyReport } from "./pr-report-repository.js";
+import { classifySemanticFailure } from "./semantic-failure.js";
+import { renderReport } from "./templates.js";
+import type { PrSemanticAnalyzer, PrSemanticInput, PrSemanticResult, SemanticGuidanceState } from "./report-types.js";
 
-/** Builds one durable report without allowing an LLM failure to block delivery. */
+/** Builds one durable report. Semantic failure is never allowed to block delivery. */
 export async function ensurePrReport(
   analysis: DeterministicPrAnalysis,
-  selectorFactory: () => ReportSelector = () => new OpenAIReportSelector(),
+  analyzerFactory: () => PrSemanticAnalyzer = () => new OpenAIPrSemanticAnalyzer(),
   repositoryReader?: RepositoryReader,
   options: { force?: boolean } = {},
 ): Promise<{ markdown: string; reused: boolean; llmStatus: "not_requested" | "completed" | "fallback" }> {
   const startedAt = Date.now();
-  log("info", "PR report generation started", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, analysisStatus: analysis.status, force: Boolean(options.force) });
   const analysisId = await getPrAnalysisId(analysis);
-  const impactAssessment = await ensureImpactAssessment(analysisId, assessImpact(analysis));
   const existing = await findReadyReport(analysisId);
-  if (existing && !options.force) {
-    log("info", "PR report reused", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus: existing.llmStatus });
-    return { markdown: existing.markdown, reused: true, llmStatus: existing.llmStatus };
-  }
+  if (existing && !options.force) return { markdown: existing.markdown, reused: true, llmStatus: existing.llmStatus };
 
-  let semantic: { targets: import("./report-types.js").FeatureVerificationTarget[]; changedHunks: import("./report-types.js").ChangedHunk[] } = { targets: [], changedHunks: [] };
+  const assessment = await findImpactAssessment(analysisId);
+  if (!assessment) throw new Error(`PR impact assessment is missing for analysis ${analysisId}`);
+  const evidence = buildReportEvidence(analysis, assessment);
+  let semanticInput: PrSemanticInput = { version: 1, enabled: false, changedHunks: [], targets: [] };
+  let guidance: SemanticGuidanceState = { status: "not_requested", notice: null };
   if (analysis.status === "ready" && repositoryReader) {
     try {
-      semantic = await buildPrSemanticContext(analysis, repositoryReader);
-      log("info", "PR semantic context prepared", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, featureTargetCount: semantic.targets.length, changedHunkCount: semantic.changedHunks.length });
+      semanticInput = await buildPrSemanticContext(analysis, assessment, repositoryReader);
     } catch (error) {
-      log("warn", "PR semantic context unavailable; using deterministic report", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, error: errorMessage(error) });
+      guidance = { status: "fallback", notice: "PR source context could not be prepared for AI guidance." };
+      log("warn", "PR semantic context unavailable; using deterministic report", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, errorCategory: classifySemanticFailure(error).category });
     }
   }
-  const evidence = buildReportEvidence(analysis, { featureTargets: semantic.targets, changedHunks: semantic.changedHunks, impactAssessment });
-  const catalog = buildSelectionCatalog(evidence);
-  let selection = defaultSelection(catalog);
-  await createBuildingReport(analysisId, evidence, selection);
+  await createBuildingReport(analysisId, evidence, semanticInput);
 
-  let llmStatus: "not_requested" | "completed" | "fallback" = "not_requested";
+  let semanticResult: PrSemanticResult | null = null;
+  let llmStatus: "not_requested" | "completed" | "fallback" = guidance.status === "fallback" ? "fallback" : "not_requested";
   let llmError: string | null = null;
   let model: string | null = null;
   let providerResponseId: string | null = null;
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
-
-  if (analysis.status === "ready" && evidence.featureTargets.length > 0) {
+  if (semanticInput.enabled && semanticInput.changedHunks.length > 0) {
+    // Retain the configured model even when the provider rejects the request.
+    // That makes a fallback report diagnosable without retaining provider text.
+    model = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
     try {
-      const selected = await selectorFactory().select(evidence, catalog);
-      selection = validateSelection(selected.selection, catalog);
+      const generated = await analyzerFactory().analyze(semanticInput, evidence);
+      semanticResult = generated.result;
       llmStatus = "completed";
-      model = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
-      providerResponseId = selected.providerResponseId;
-      inputTokens = selected.inputTokens;
-      outputTokens = selected.outputTokens;
+      guidance = { status: "completed", notice: null };
+      providerResponseId = generated.providerResponseId;
+      inputTokens = generated.inputTokens;
+      outputTokens = generated.outputTokens;
     } catch (error) {
+      const failure = classifySemanticFailure(error);
       llmStatus = "fallback";
-      llmError = errorMessage(error);
-      log("warn", "OpenAI report selection unavailable; using deterministic scenario selection", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, error: llmError });
+      llmError = failure.persistedReason;
+      guidance = { status: "fallback", notice: failure.notice };
+      log("warn", "PR semantic analysis unavailable; using deterministic report", {
+        repoId: analysis.repoId,
+        pullRequestNumber: analysis.pullRequestNumber,
+        headSha: analysis.headSha,
+        model,
+        errorCategory: failure.category,
+        providerStatus: failure.providerStatus,
+        providerCode: failure.providerCode,
+        providerType: failure.providerType,
+        providerDiagnostic: failure.providerDiagnostic,
+      });
     }
   }
-
-  const markdown = renderReport(evidence, selection);
-  await persistReadyReport({
-    analysisId,
-    evidence,
-    selection,
-    markdown,
-    model,
-    providerResponseId,
-    inputTokens,
-    outputTokens,
-    llmStatus,
-    llmError,
-  });
-  log("info", "PR report generation completed", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus, featureTargetCount: evidence.featureTargets.length, verificationCount: selection.verifications.length, durationMs: Date.now() - startedAt });
+  if (guidance.status === "fallback" && !llmError) llmError = "PR semantic source context unavailable";
+  const markdown = renderReport(evidence, semanticResult, guidance);
+  await persistReadyReport({ analysisId, evidence, semanticInput, semanticResult, markdown, model, providerResponseId, inputTokens, outputTokens, llmStatus, llmError });
+  log("info", "PR report generation completed", { repoId: analysis.repoId, pullRequestNumber: analysis.pullRequestNumber, headSha: analysis.headSha, llmStatus, semanticTargetCount: semanticInput.targets.length, semanticSummaryCount: semanticResult?.changeSummaries.length ?? 0, durationMs: Date.now() - startedAt });
   return { markdown, reused: false, llmStatus };
 }

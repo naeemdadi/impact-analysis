@@ -4,7 +4,6 @@ import { updateGraphIncrementally } from "../graph/update-incremental.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
-import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
 import { enqueueBranchReconciliation } from "../queue/reconciliation-queue.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
@@ -28,13 +27,6 @@ export async function processNextBranchPushJob(): Promise<boolean> {
       log("info", "push graph update superseded by newer branch head", { jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha, liveSha: result.liveSha });
       return true;
     }
-    if (result) await enqueueFeatureIndex({
-      deliveryId: job.deliveryId, repoId: payload.repoId, branch: payload.branch, sha: result.sha,
-      // A full graph fallback intentionally refreshes all feature cards because
-      // comparison/configuration evidence was not safe to scope further.
-      mode: result.buildMode === "incremental" ? "incremental" : "full",
-      changedPaths: result.featureIndexPaths,
-    });
     await completeJob(job);
     log("info", result ? "push graph snapshot ready" : "push graph build skipped for deleted branch", {
       jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha,

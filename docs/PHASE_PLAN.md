@@ -144,7 +144,7 @@ Compute direct and indirect impact from PR changes using baseline graph.
 ### Status
 
 - Implementation complete; apply the Phase 5 migration before processing PR jobs
-- Deterministic report fixtures cover evidence IDs, confidence, invalid selections, and insufficient evidence
+- Deterministic report fixtures cover evidence IDs, invalid semantic output, and insufficient evidence
 - Live report acceptance remains to be run against an installed repository
 
 ### Goal
@@ -153,24 +153,19 @@ Generate developer friendly output from deterministic evidence only.
 
 ### Deliverables
 
-- Evidence JSON schema and validator
-- Prompt template that consumes evidence only
-- Report sections: affected why indirect impact verification evidence summary
-- Confidence model based on evidence coverage and unresolved imports
+- Deterministic evidence and relevance-policy persistence
+- PR-scoped, bounded source context for optional AI assistance
+- AI summaries/checks constrained by hunk and route-context IDs
+- Report sections: what changed, Primary/Secondary verification, technical impact, and evidence
 
 ### Exit Criteria
 
 - No report claim appears without evidence path
-- Low confidence cases show partial confidence message
 - Output format matches target in `docs/PRODUCT.md`
 
-### Future Enhancement: Feature-Map Context Quality
+### Current Architecture Note
 
-- Map tRPC client calls to named server procedures so a page’s feature context includes only the procedures it uses, not every router imported by the tRPC root.
-- Rank bounded context toward route UI, stateful components, and procedure call sites instead of breadth-first import order; generic UI primitives and utilities are lower priority.
-- Record context selection reasons, selected/reachable file counts, and truncation status with each feature card.
-- Share common context for route families, such as seller-directory pages, while retaining route-specific scenarios and metadata.
-- tRPC transport adapters (`/api/trpc` and variants) are excluded from product feature cards; their graph facts remain available as deterministic infrastructure evidence.
+- Feature cards, domain cards, vector retrieval, and background AI indexing are intentionally not part of the product. Semantic work occurs only for the exact PR currently being reported.
 
 ## Phase 6: PR Delivery UX
 

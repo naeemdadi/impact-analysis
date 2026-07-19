@@ -8,7 +8,7 @@ const request = { repoId: 1, pullRequestNumber: 42, baseRef: "main", baseSha: "b
 
 function graph(files: Array<[string, BaselineGraph["files"][number]["kind"]]>, edges: Array<[string, string | null, BaselineGraph["imports"][number]["resolutionStatus"]]> = [], symbols: BaselineGraph["symbols"] = []): BaselineGraph {
   return {
-    files: files.map(([path, kind]) => ({ path, kind, blobSha: path, classificationReason: "fixture" })),
+    files: files.map(([path, kind]) => ({ path, kind, blobSha: path, classificationReason: "fixture", technicalRole: kind === "page" || kind === "api_route" ? "application" : kind === "component" ? "presentation" : "application", technicalRoleReason: "fixture", technicalRoleStrength: "strong" })),
     symbols,
     imports: edges.map(([fromPath, toPath, resolutionStatus]) => ({ fromPath, toPath, resolutionStatus, specifier: toPath ?? "external", kind: "static", unresolvedReason: resolutionStatus === "unresolved" ? "fixture" : null })),
   };

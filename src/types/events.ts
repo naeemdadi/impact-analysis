@@ -1,4 +1,4 @@
-export type JobType = "installation.sync" | "branch.push" | "branch.reconcile" | "pull_request.analyze" | "pull_request.deliver" | "feature.index";
+export type JobType = "installation.sync" | "branch.push" | "branch.reconcile" | "pull_request.analyze" | "pull_request.deliver";
 
 export interface EnqueueRequest {
   idempotencyKey: string;

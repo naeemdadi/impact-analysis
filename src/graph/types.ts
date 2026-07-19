@@ -13,7 +13,11 @@ export type GraphFileKind =
 export type GraphSymbolKind = "function" | "class" | "component" | "variable";
 export type GraphImportKind = "static" | "dynamic" | "type_only";
 export type GraphImportResolutionStatus = "resolved" | "unresolved" | "external" | "asset";
-export type TechnicalRole = "business_logic" | "presentation" | "ui_primitive" | "analytics" | "infrastructure" | "styling" | "configuration" | "testing" | "utility" | "application_module" | "unknown";
+/**
+ * A conservative, deterministic description of a module's technical job.
+ * It deliberately does not claim business ownership such as "pricing".
+ */
+export type TechnicalRole = "application" | "presentation" | "ui_primitive" | "analytics" | "infrastructure" | "styling" | "configuration" | "testing" | "utility" | "unknown";
 export type TechnicalRoleStrength = "strong" | "heuristic" | "unknown";
 
 export interface SourceFile {
@@ -56,9 +60,10 @@ export interface GraphFile {
   blobSha: string;
   kind: GraphFileKind;
   classificationReason: string;
-  technicalRole?: TechnicalRole;
-  technicalRoleReason?: string;
-  technicalRoleStrength?: TechnicalRoleStrength;
+  // Produced while parsing this exact source file and persisted with graph facts.
+  technicalRole: TechnicalRole;
+  technicalRoleReason: string;
+  technicalRoleStrength: TechnicalRoleStrength;
 }
 
 export interface GraphSymbol {
@@ -130,11 +135,10 @@ export interface SupersededGraphUpdateResult {
   liveSha: string;
 }
 
-/** Additional non-persisted data used to scope downstream feature-card work. */
 export interface IncrementalGraphUpdateResult extends BaselineBuildResult {
-  // Paths reanalyzed while producing the current graph. They include reverse
-  // dependents of deleted/renamed files, which makes them safe feature-index seeds.
-  featureIndexPaths: string[];
+  // Paths reanalyzed while producing the current graph. Retained for build
+  // diagnostics; semantic AI is intentionally PR-scoped and never consumes it.
+  reanalyzedPaths: string[];
 }
 
 export interface RepositoryReader {

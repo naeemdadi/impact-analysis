@@ -13,6 +13,18 @@ export async function buildPullRequestImpactAnalysis(
   request: PullRequestAnalysisRequest,
   repositoryReader: RepositoryReader,
 ): Promise<DeterministicPrAnalysis> {
+  return (await buildPullRequestImpactArtifacts(request, repositoryReader)).analysis;
+}
+
+/**
+ * The PR worker needs the exact ephemeral graphs once: analysis consumes them
+ * for reachability and the policy consumes their persisted technical roles.
+ * They are deliberately never written as PR-branch graph state.
+ */
+export async function buildPullRequestImpactArtifacts(
+  request: PullRequestAnalysisRequest,
+  repositoryReader: RepositoryReader,
+): Promise<{ analysis: DeterministicPrAnalysis; baseGraph: BaselineGraph | null; headGraph: BaselineGraph | null }> {
   const startedAt = Date.now();
   log("info", "PR impact analysis started", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseRef: request.baseRef, baseSha: request.baseSha, headSha: request.headSha });
   const config = await getRepoConfig(request.repoId);
@@ -34,7 +46,7 @@ export async function buildPullRequestImpactAnalysis(
   });
   if (!comparison.comparable) {
     log("warn", "PR impact analysis has insufficient comparison evidence", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, headSha: request.headSha, reason: comparison.reason, changedFileCount: comparison.changes.length, durationMs: Date.now() - startedAt });
-    return createInsufficientAnalysis(request, comparison.reason ?? "PR comparison is unavailable", comparison.changes);
+    return { analysis: createInsufficientAnalysis(request, comparison.reason ?? "PR comparison is unavailable", comparison.changes), baseGraph: null, headGraph: null };
   }
 
   try {
@@ -42,11 +54,11 @@ export async function buildPullRequestImpactAnalysis(
     const headGraph = await buildHeadGraph(baseGraph, comparison.changes, request.headSha, repositoryReader, sourceInput);
     const result = analyzePrImpact({ request, baseGraph, headGraph, changes: comparison.changes });
     log("info", "PR impact analysis completed", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, headSha: request.headSha, changedFileCount: result.changedFiles.length, changedSymbolCount: result.changedSymbols.length, affectedItemCount: result.affectedItems.length, unresolvedImportCount: result.unresolvedImportCount, impactLevel: result.impactLevel, durationMs: Date.now() - startedAt });
-    return result;
+    return { analysis: result, baseGraph, headGraph };
   } catch (error) {
     if (error instanceof UnsupportedRepositoryError) {
       log("warn", "PR impact analysis has unsupported source profile", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, headSha: request.headSha, reason: error.message, durationMs: Date.now() - startedAt });
-      return createInsufficientAnalysis(request, error.message, comparison.changes);
+      return { analysis: createInsufficientAnalysis(request, error.message, comparison.changes), baseGraph: null, headGraph: null };
     }
     log("error", "PR impact analysis failed", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, headSha: request.headSha, durationMs: Date.now() - startedAt, error: errorMessage(error) });
     throw error;

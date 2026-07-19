@@ -12,7 +12,7 @@ export interface RepoConfig {
   trackedBranch: string;
   isActive: boolean;
   accessState: RepoAccessState;
-  semanticAiEnabled: boolean;
+  aiAssistanceEnabled: boolean;
 }
 
 export async function upsertRepoConfig(config: RepoConfig): Promise<void> {
@@ -26,7 +26,7 @@ export async function upsertRepoConfig(config: RepoConfig): Promise<void> {
       trackedBranch: config.trackedBranch,
       isActive: config.isActive,
       accessState: config.accessState,
-      semanticAiEnabled: config.semanticAiEnabled,
+      aiAssistanceEnabled: config.aiAssistanceEnabled,
     })
     .onConflictDoUpdate({
       target: repoConfigTable.repoId,
@@ -52,7 +52,7 @@ export async function getRepoConfig(repoId: number): Promise<RepoConfig | null> 
       trackedBranch: repoConfigTable.trackedBranch,
       isActive: repoConfigTable.isActive,
       accessState: repoConfigTable.accessState,
-      semanticAiEnabled: repoConfigTable.semanticAiEnabled,
+      aiAssistanceEnabled: repoConfigTable.aiAssistanceEnabled,
     })
     .from(repoConfigTable)
     .where(eq(repoConfigTable.repoId, repoId))
@@ -71,7 +71,7 @@ export async function getRepoConfig(repoId: number): Promise<RepoConfig | null> 
     trackedBranch: row.trackedBranch,
     isActive: row.isActive,
     accessState: row.accessState as RepoAccessState,
-    semanticAiEnabled: row.semanticAiEnabled,
+    aiAssistanceEnabled: row.aiAssistanceEnabled,
   };
 }
 
@@ -90,8 +90,8 @@ export async function setRepoConfigAccessState(repoId: number, accessState: Repo
 }
 
 /** Explicit repository consent for bounded source-context requests to OpenAI. */
-export async function setSemanticAiEnabled(repoId: number, semanticAiEnabled: boolean): Promise<void> {
-  await db.update(repoConfigTable).set({ semanticAiEnabled, updatedAt: sql`NOW()` }).where(eq(repoConfigTable.repoId, repoId));
+export async function setAiAssistanceEnabled(repoId: number, aiAssistanceEnabled: boolean): Promise<void> {
+  await db.update(repoConfigTable).set({ aiAssistanceEnabled, updatedAt: sql`NOW()` }).where(eq(repoConfigTable.repoId, repoId));
 }
 
 export async function transitionInstallationRepoAccessState(
@@ -129,7 +129,7 @@ export async function getRepoConfigsForInstallation(installationId: number): Pro
       trackedBranch: repoConfigTable.trackedBranch,
       isActive: repoConfigTable.isActive,
       accessState: repoConfigTable.accessState,
-      semanticAiEnabled: repoConfigTable.semanticAiEnabled,
+      aiAssistanceEnabled: repoConfigTable.aiAssistanceEnabled,
     })
     .from(repoConfigTable)
     .where(eq(repoConfigTable.installationId, installationId));
@@ -140,7 +140,7 @@ export async function listActiveRepoConfigs(): Promise<RepoConfig[]> {
   const rows = await db.select({
     repoId: repoConfigTable.repoId, installationId: repoConfigTable.installationId, owner: repoConfigTable.owner,
     name: repoConfigTable.name, trackedBranch: repoConfigTable.trackedBranch, isActive: repoConfigTable.isActive,
-    accessState: repoConfigTable.accessState, semanticAiEnabled: repoConfigTable.semanticAiEnabled,
+    accessState: repoConfigTable.accessState, aiAssistanceEnabled: repoConfigTable.aiAssistanceEnabled,
   }).from(repoConfigTable).where(eq(repoConfigTable.isActive, true));
   return rows.map((row) => ({ ...row, accessState: row.accessState as RepoAccessState }));
 }

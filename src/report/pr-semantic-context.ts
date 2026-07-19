@@ -1,69 +1,67 @@
-import { buildEphemeralFeatureCard, buildExactHeadFeatureContexts } from "../feature/feature-service.js";
-import { findReadyFeatureCard } from "../feature/feature-card-repository.js";
 import type { RepositoryReader, SourceFile } from "../graph/types.js";
+import type { ImpactAssessment } from "../impact/impact-assessment.js";
 import type { DeterministicPrAnalysis } from "../impact/pr-impact-types.js";
 import { getRepoConfig } from "../storage/repo-config-repo.js";
-import type { ChangedHunk, FeatureVerificationTarget } from "./report-types.js";
+import { targetIdFor } from "./templates.js";
+import type { ChangedHunk, PrSemanticInput, SemanticEntrypointTarget, SourceContextItem } from "./report-types.js";
 
-/** Creates bounded, exact-head semantic report inputs. It never changes graph facts. */
-export async function buildPrSemanticContext(analysis: DeterministicPrAnalysis, repositoryReader: RepositoryReader): Promise<{
-  targets: FeatureVerificationTarget[];
-  changedHunks: ChangedHunk[];
-}> {
-  const entrypoints = analysis.affectedItems
-    .filter((item) => item.kind === "page" || item.kind === "api_route")
-    .sort((left, right) => Number(right.impact === "direct") - Number(left.impact === "direct") || left.dependencyPath.length - right.dependencyPath.length || left.path.localeCompare(right.path))
-    .slice(0, 5);
-  if (entrypoints.length === 0) return { targets: [], changedHunks: [] };
+const maxHunks = 12;
+const maxHunkCharacters = 4_000;
+const maxRouteFiles = 6;
+const maxRouteCharacters = 18_000;
+const maxTotalRouteCharacters = 42_000;
+
+/**
+ * Builds the only source packet allowed to leave the repository for a PR.
+ * It uses the exact PR head and never reads or writes branch-level AI state.
+ */
+export async function buildPrSemanticContext(
+  analysis: DeterministicPrAnalysis,
+  assessment: ImpactAssessment,
+  repositoryReader: RepositoryReader,
+): Promise<PrSemanticInput> {
   const config = await getRepoConfig(analysis.repoId);
-  if (!config) return { targets: [], changedHunks: [] };
-  const exact = await buildExactHeadFeatureContexts({
-    repoId: analysis.repoId, branch: config.trackedBranch, headSha: analysis.headSha, entryPaths: entrypoints.map((item) => item.path), repositoryReader,
-  });
-  if (!exact.semanticAiEnabled) return { targets: [], changedHunks: [] };
-
-  const targets: FeatureVerificationTarget[] = [];
-  for (const item of entrypoints) {
-    const context = exact.contexts.get(item.path);
-    if (!context) continue;
-    let card = (await findReadyFeatureCard({ repoId: analysis.repoId, branch: exact.source.branch, entryPath: item.path, sourceFingerprint: context.sourceFingerprint }))?.card ?? null;
-    if (!card) {
-      try { card = await buildEphemeralFeatureCard({ context, semanticAiEnabled: true }); } catch { card = null; }
-    }
-    if (!card) continue;
-    const id = `entry:${item.path}`;
+  if (!config?.aiAssistanceEnabled || analysis.status !== "ready") return { version: 1, enabled: false, changedHunks: [], targets: [] };
+  if (!config.owner || !config.name) return { version: 1, enabled: false, changedHunks: [], targets: [] };
+  const source = { repoId: analysis.repoId, installationId: config.installationId, owner: config.owner, name: config.name, branch: config.trackedBranch };
+  const changedHunks = await fetchChangedHunks(analysis, repositoryReader, source);
+  const candidates = assessment.items.filter((item) => item.tier === "primary" || item.tier === "secondary").slice(0, 5);
+  const targets: SemanticEntrypointTarget[] = [];
+  let remaining = maxTotalRouteCharacters;
+  for (const [targetIndex, item] of candidates.entries()) {
+    if (remaining <= 0) break;
+    // The entrypoint itself is mandatory. The remaining budget follows the
+    // nearest nodes on its already-verified dependency path.
+    const paths = [item.path, ...item.dependencyPath.filter((path) => path !== item.path).slice(-(maxRouteFiles - 1))]
+      .filter(isAllowedSourcePath);
+    if (!paths.length) continue;
+    const files = await repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths });
+    const context = toContextItems(files, remaining, targetIndex + 1);
+    remaining -= context.reduce((total, file) => total + file.excerpt.length, 0);
+    if (!context.length) continue;
     targets.push({
-      id, path: item.path, kind: item.kind as "page" | "api_route", impact: item.impact, dependencyPath: item.dependencyPath,
-      title: card.title, description: card.description,
-      scenarios: card.scenarios.map((scenario) => ({
-        id: `${id}:scenario:${scenario.id}`, title: scenario.title, steps: scenario.steps, contextIds: scenario.contextIds,
-      })),
+      id: targetIdFor(item), path: item.path, kind: item.kind, tier: item.tier as "primary" | "secondary",
+      changedSeedPath: item.changedSeedPath, dependencyPath: item.dependencyPath, context,
     });
   }
-  const changedHunks = await fetchChangedHunks(analysis, repositoryReader, exact.source);
-  return { targets, changedHunks };
+  return { version: 1, enabled: true, changedHunks, targets };
 }
 
-async function fetchChangedHunks(analysis: DeterministicPrAnalysis, repositoryReader: RepositoryReader, headSource: { repoId: number; installationId?: number; owner: string; name: string; branch: string; sha: string }): Promise<ChangedHunk[]> {
-  // Source does not carry installation metadata, so resolve it through the feature source's repository config by using the reader call input reconstructed below.
-  // The exact source fetch above guarantees head content; base blobs are fetched only for changed graph files.
-  const config = await getRepoConfig(analysis.repoId);
-  if (!config) return [];
-  const changed = analysis.changedFiles.filter((file) => file.graphRelevant).slice(0, 12);
+async function fetchChangedHunks(
+  analysis: DeterministicPrAnalysis,
+  repositoryReader: RepositoryReader,
+  source: { repoId: number; installationId: number; owner: string; name: string; branch: string },
+): Promise<ChangedHunk[]> {
+  const changed = analysis.changedFiles.filter((file) => file.graphRelevant && isAllowedSourcePath(file.path)).slice(0, maxHunks);
   const headPaths = changed.filter((file) => file.status !== "removed").map((file) => file.path);
   const basePaths = changed.filter((file) => file.status !== "added").map((file) => file.previousPath ?? file.path);
-  const input = { repoId: analysis.repoId, installationId: config.installationId, owner: headSource.owner, name: headSource.name, branch: headSource.branch };
-  const [headFiles, baseFiles] = await Promise.all([
-    repositoryReader.fetchFiles({ ...input, sha: analysis.headSha, paths: headPaths }),
-    repositoryReader.fetchFiles({ ...input, sha: analysis.baseSha, paths: basePaths }),
+  const [head, base] = await Promise.all([
+    repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths: headPaths }),
+    repositoryReader.fetchFiles({ ...source, sha: analysis.baseSha, paths: basePaths }),
   ]);
-  const headByPath = new Map(headFiles.map((file) => [file.path, file]));
-  const baseByPath = new Map(baseFiles.map((file) => [file.path, file]));
-  return changed.flatMap((change, index) => {
-    const before = baseByPath.get(change.previousPath ?? change.path);
-    const after = headByPath.get(change.path);
-    return toHunk(`hunk:${index + 1}`, change.path, before, after);
-  });
+  const headByPath = new Map(head.map((file) => [file.path, file]));
+  const baseByPath = new Map(base.map((file) => [file.path, file]));
+  return changed.flatMap((change, index) => toHunk(`hunk:${index + 1}`, change.path, baseByPath.get(change.previousPath ?? change.path), headByPath.get(change.path)));
 }
 
 function toHunk(id: string, path: string, before: SourceFile | undefined, after: SourceFile | undefined): ChangedHunk[] {
@@ -74,10 +72,31 @@ function toHunk(id: string, path: string, before: SourceFile | undefined, after:
   let suffix = 0;
   while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && beforeLines[beforeLines.length - suffix - 1] === afterLines[afterLines.length - suffix - 1]) suffix++;
   const start = Math.max(0, prefix - 3);
-  const beforeEnd = Math.min(beforeLines.length, beforeLines.length - suffix + 3);
-  const afterEnd = Math.min(afterLines.length, afterLines.length - suffix + 3);
-  const beforeExcerpt = beforeLines.slice(start, beforeEnd).join("\n").slice(0, 4_000);
-  const afterExcerpt = afterLines.slice(start, afterEnd).join("\n").slice(0, 4_000);
-  if (!beforeExcerpt && !afterExcerpt) return [];
-  return [{ id, path, beforeStartLine: start + 1, afterStartLine: start + 1, beforeExcerpt, afterExcerpt }];
+  const beforeExcerpt = beforeLines.slice(start, Math.min(beforeLines.length, beforeLines.length - suffix + 3)).join("\n").slice(0, maxHunkCharacters);
+  const afterExcerpt = afterLines.slice(start, Math.min(afterLines.length, afterLines.length - suffix + 3)).join("\n").slice(0, maxHunkCharacters);
+  return beforeExcerpt || afterExcerpt ? [{ id, path, beforeStartLine: start + 1, afterStartLine: start + 1, beforeExcerpt, afterExcerpt }] : [];
+}
+
+function toContextItems(files: SourceFile[], remaining: number, targetIndex: number): SourceContextItem[] {
+  let budget = Math.min(maxRouteCharacters, remaining);
+  const items: SourceContextItem[] = [];
+  for (const [index, file] of files.sort((a, b) => a.path.localeCompare(b.path)).entries()) {
+    if (!isAllowedSourcePath(file.path) || budget <= 0) continue;
+    const excerpt = file.content.slice(0, Math.min(4_000, budget));
+    if (!excerpt) continue;
+    items.push({ id: `context:${targetIndex}:${items.length + 1}`, path: file.path, blobSha: file.blobSha, startLine: 1, endLine: excerpt.split("\n").length, excerpt });
+    budget -= excerpt.length;
+  }
+  return items;
+}
+
+/** Source exclusion is a privacy boundary, not a graph classification rule. */
+export function isAllowedSourcePath(path: string): boolean {
+  const value = path.toLowerCase();
+  if (/(^|\/)(?:\.env|env)(?:\.|\/|$)/.test(value)) return false;
+  if (/(?:lock\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(value)) return false;
+  if (/(^|\/)(?:node_modules|dist|build|\.next|generated)(?:\/|$)/.test(value)) return false;
+  if (/(^|\/)(?:scripts|drizzle)(?:\/|$)/.test(value)) return false;
+  if (/(^|\/)(?:config|server\/db|database|migrations?)(?:\/|$)/.test(value)) return false;
+  return /\.(?:ts|tsx|js|jsx|mjs|cjs|css|scss|sass|less)$/.test(value);
 }

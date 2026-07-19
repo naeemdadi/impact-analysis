@@ -15,7 +15,7 @@ Track top risks for MVP delivery and define practical mitigations before impleme
 
 - **Risk:** Path aliases and monorepo layouts can break dependency resolution.
 - **Impact:** Missing impact paths and weak report quality.
-- **Mitigation:** Parse `tsconfig` paths and surface unresolved imports in evidence with partial confidence mode.
+- **Mitigation:** Parse `tsconfig` paths and surface unresolved imports in evidence; suppress claims when required evidence is unavailable.
 - **Owner:** Graph engine
 
 ## Risk 3: Large Repo Performance
@@ -65,4 +65,4 @@ Track top risks for MVP delivery and define practical mitigations before impleme
 If a risk cannot be fully mitigated in MVP we accept it only when:
 
 - deterministic evidence remains correct
-- user facing output clearly communicates confidence and limitations
+- user facing output clearly communicates evidence limitations without unsupported confidence claims
