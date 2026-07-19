@@ -30,3 +30,12 @@ export async function enqueuePullRequestDelivery(input: PullRequestDeliveryReque
     jobPayload: { ...payload },
   });
 }
+
+/** Queues one idempotent repair for a comment pointer discovered by reconciliation. */
+export async function enqueueUndeliveredPullRequestComment(input: PullRequestDeliveryRequest): Promise<void> {
+  const digest = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  await enqueuePullRequestDelivery({
+    ...input,
+    deliveryId: `system:pull-request-delivery:${digest}`,
+  });
+}

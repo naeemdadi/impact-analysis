@@ -1,4 +1,5 @@
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
+import { reconcileUndeliveredPullRequestCommentsOnce } from "../delivery/pr-comment-delivery-reconciler.js";
 import { getCurrentSnapshotSha } from "../graph/snapshot-repository.js";
 import { enqueueBranchReconciliation } from "../queue/reconciliation-queue.js";
 import { reapExpiredJobLeases } from "../queue/worker-repository.js";
@@ -7,6 +8,13 @@ import { listActiveRepoConfigs } from "../storage/repo-config-repo.js";
 
 export async function reconcileTrackedBranchesOnce(): Promise<void> {
   await reapExpiredJobLeases();
+  try {
+    await reconcileUndeliveredPullRequestCommentsOnce();
+  } catch (error) {
+    log("warn", "pull request comment reconciliation scan failed", {
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+  }
   const reader = new GitHubRepositoryReader();
   for (const config of await listActiveRepoConfigs()) {
     if (!config.owner || !config.name) continue;

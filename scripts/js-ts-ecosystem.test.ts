@@ -69,17 +69,28 @@ test("keeps runtime route construction graph-only", () => {
   assert.equal(graph.entrypoints?.length, 0);
 });
 
-test("requires explicit configuration to resolve conflicting framework evidence", () => {
+test("requires explicit configuration when dependencies conflict without static route evidence", () => {
   const files = {
     "package.json": JSON.stringify({ dependencies: { next: "1", express: "1" } }),
-    "app/page.tsx": "export default function Page() { return <p>Home</p>; }",
+    "src/index.ts": "export const status = 'ok';",
   };
   const ambiguous = buildBaselineGraph(source(files));
   assert.equal(ambiguous.projects?.[0]?.status, "ambiguous");
   assert.equal(ambiguous.entrypoints?.length, 0);
-  const selected = buildBaselineGraph(source({ ...files, "impact-analysis.config.json": JSON.stringify({ projects: [{ root: ".", adapter: "next" }] }) }));
+  const selected = buildBaselineGraph(source({ ...files, "app/page.tsx": "export default function Page() { return <p>Home</p>; }", "impact-analysis.config.json": JSON.stringify({ projects: [{ root: ".", adapter: "next" }] }) }));
   assert.equal(selected.projects?.[0]?.primaryFramework, "next");
   assert.deepEqual(selected.entrypoints?.map((entrypoint) => entrypoint.routePath), ["/"]);
+});
+
+test("prefers statically proven Next.js routes over an incidental Express dependency", () => {
+  const graph = buildBaselineGraph(source({
+    "package.json": JSON.stringify({ dependencies: { next: "1", express: "1", "@trpc/server": "1" } }),
+    "src/app/s/[publicId]/page.tsx": "export default function SellerPage() { return <p>Seller</p>; }",
+    "src/server/legacy.ts": "import express from 'express'; export const app = express();",
+  }));
+  assert.equal(graph.projects?.[0]?.primaryFramework, "next");
+  assert.equal(graph.projects?.[0]?.status, "supported");
+  assert.deepEqual(graph.entrypoints?.map((entrypoint) => entrypoint.routePath), ["/s/:publicId"]);
 });
 
 test("uses framework entrypoints, not file conventions, for monorepo PR reachability", () => {

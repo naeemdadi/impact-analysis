@@ -341,8 +341,15 @@ export const prCommentDeliveryTable = pgTable(
     // Newest analysis selected for delivery; older queued jobs must not overwrite it.
     desiredAnalysisId: uuid("desired_analysis_id").references(() => prAnalysisTable.id),
     desiredHeadSha: text("desired_head_sha").notNull(),
+    // The requested comment representation for the desired analysis. A running
+    // comment and its ready report share an analysis/SHA, so the state is part
+    // of the delivery identity rather than merely a display detail.
+    desiredState: text("desired_state").notNull().default("ready"),
     lastDeliveredAnalysisId: uuid("last_delivered_analysis_id").references(() => prAnalysisTable.id),
     lastDeliveredHeadSha: text("last_delivered_head_sha"),
+    // The representation GitHub last accepted. This makes a delivered running
+    // status distinguishable from a delivered ready report for the same SHA.
+    lastDeliveredState: text("last_delivered_state"),
     // pending, delivered, or failed. Analysis/report lifecycle remains elsewhere.
     status: text("status").notNull().default("pending"),
     lastError: text("last_error"),

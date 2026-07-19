@@ -14,7 +14,7 @@ export async function deliverPullRequestComment(
 ): Promise<{ action: DeliveryAction; commentId: number | null }> {
   return withPrCommentDeliveryLock(request.repoId, request.pullRequestNumber, async () => {
     const delivery = await getPrCommentDelivery(request.repoId, request.pullRequestNumber);
-    if (!delivery || delivery.desiredAnalysisId !== request.prAnalysisId || delivery.desiredHeadSha !== request.headSha) {
+    if (!delivery || delivery.desiredAnalysisId !== request.prAnalysisId || delivery.desiredHeadSha !== request.headSha || delivery.desiredState !== request.deliveryState) {
       return { action: "skipped_stale", commentId: delivery?.commentId ?? null };
     }
 
@@ -59,7 +59,14 @@ export async function deliverPullRequestComment(
       }
     }
 
-    await markPrCommentDelivered({ repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, analysisId: request.prAnalysisId, headSha: request.headSha, commentId });
+    await markPrCommentDelivered({
+      repoId: request.repoId,
+      pullRequestNumber: request.pullRequestNumber,
+      analysisId: request.prAnalysisId,
+      headSha: request.headSha,
+      deliveryState: request.deliveryState,
+      commentId,
+    });
     return { action, commentId };
   });
 }

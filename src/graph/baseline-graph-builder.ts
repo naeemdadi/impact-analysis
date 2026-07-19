@@ -222,14 +222,17 @@ function classifyFile(pathValue: string, symbols: GraphSymbol[], _project: Proje
   return { kind: "module", reason: "generic JavaScript/TypeScript module" };
 }
 
-export function classifyTechnicalRole(pathValue: string, kind: GraphFileKind, source: string): Pick<GraphFile, "technicalRole" | "technicalRoleReason" | "technicalRoleStrength"> {
+export function classifyTechnicalRole(pathValue: string, kind: GraphFileKind, _source: string): Pick<GraphFile, "technicalRole" | "technicalRoleReason" | "technicalRoleStrength"> {
   const lower = pathValue.toLowerCase();
-  const text = source.toLowerCase();
   if (kind === "style") return { technicalRole: "styling", technicalRoleReason: "stylesheet graph role", technicalRoleStrength: "strong" };
   if (kind === "tooling" || /(?:config|\.env|scripts\/)/.test(lower)) return { technicalRole: "configuration", technicalRoleReason: "tooling/configuration path convention", technicalRoleStrength: "strong" };
   if (/(?:^|\/)(?:test|tests|__tests__|spec)(?:\/|\.|$)/.test(lower)) return { technicalRole: "testing", technicalRoleReason: "test path convention", technicalRoleStrength: "strong" };
   if (/(?:components\/ui|\/ui\/|design-system|primitives)/.test(lower)) return { technicalRole: "ui_primitive", technicalRoleReason: "UI primitive path convention", technicalRoleStrength: "strong" };
-  if (/(?:analytics|telemetry|tracking|segment|posthog|mixpanel)/.test(lower) || /(?:useanalytics|track\(|capture\()/.test(text)) return { technicalRole: "analytics", technicalRoleReason: "analytics path or API signal", technicalRoleStrength: "strong" };
+  // A product component may track an event while still owning important UI
+  // behavior. Only a dedicated analytics module is safely suppressible from
+  // customer-flow verification; call-site text such as `track()` is not proof
+  // of that module's primary responsibility.
+  if (/(?:analytics|telemetry|tracking|segment|posthog|mixpanel)/.test(lower)) return { technicalRole: "analytics", technicalRoleReason: "dedicated analytics path convention", technicalRoleStrength: "strong" };
   if (/(?:^|\/)(?:db|database|cache|queue|transport|adapter|storage|cloudinary|provider|infra)(?:\/|$)/.test(lower)) return { technicalRole: "infrastructure", technicalRoleReason: "infrastructure path convention", technicalRoleStrength: "strong" };
   if (kind === "component") return { technicalRole: "presentation", technicalRoleReason: "component graph role", technicalRoleStrength: "strong" };
   if (/(?:utils?|helpers?|format|constants?)/.test(lower)) return { technicalRole: "utility", technicalRoleReason: "utility path convention", technicalRoleStrength: "heuristic" };

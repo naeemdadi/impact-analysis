@@ -104,13 +104,32 @@ function descriptorFor(rootPath: string, files: Map<string, SourceFile>, overrid
 function detectFramework(packageValue: Record<string, unknown>, rootPath: string, allPaths: string[]): { primary: PrimaryFramework; candidates: Exclude<PrimaryFramework, "generic" | "ambiguous">[]; protocols: ProtocolProfile[] } {
   const dependencies = { ...asObject(packageValue.dependencies), ...asObject(packageValue.devDependencies), ...asObject(packageValue.peerDependencies) };
   const has = (name: string) => Object.prototype.hasOwnProperty.call(dependencies, name);
+  const hasNextRouteConvention = allPaths.some((filePath) => isUnderRoot(filePath, rootPath) && /^(?:src\/)?(?:app\/(?:.*\/)?(?:page|route)|pages\/.+)\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(relativePath(rootPath, filePath)));
+  const hasRemixRouteConvention = allPaths.some((filePath) => /^app\/routes\/.+\.(?:ts|tsx|js|jsx)$/.test(relativePath(rootPath, filePath)));
+
+  // A framework route convention is direct, static evidence of the app's
+  // routing model. It is more reliable than an incidental server dependency
+  // such as Express inside an otherwise Next.js application.
+  if (hasNextRouteConvention) {
+    return {
+      primary: "next",
+      candidates: ["next"],
+      protocols: has("@trpc/server") || has("@trpc/client") || has("@trpc/react-query") ? ["trpc"] : [],
+    };
+  }
+  if (hasRemixRouteConvention) {
+    return {
+      primary: "remix",
+      candidates: ["remix"],
+      protocols: has("@trpc/server") || has("@trpc/client") || has("@trpc/react-query") ? ["trpc"] : [],
+    };
+  }
+
   const candidates: Exclude<PrimaryFramework, "generic" | "ambiguous">[] = [];
   if (has("next")) candidates.push("next");
   if (has("@remix-run/react") || has("@remix-run/node") || has("remix")) candidates.push("remix");
   if (has("express")) candidates.push("express");
   if (has("react-router-dom") || has("react-router")) candidates.push("react_router");
-  if (candidates.length === 0 && allPaths.some((filePath) => isUnderRoot(filePath, rootPath) && /^(?:src\/)?(?:app\/(?:.*\/)?(?:page|route)|pages\/)/.test(relativePath(rootPath, filePath)))) candidates.push("next");
-  if (candidates.length === 0 && allPaths.some((filePath) => /^app\/routes\/.+\.(?:ts|tsx|js|jsx)$/.test(relativePath(rootPath, filePath)))) candidates.push("remix");
   return {
     primary: candidates.length === 1 ? candidates[0] : "generic",
     candidates,

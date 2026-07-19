@@ -1,5 +1,8 @@
 {
   "version": "7",
   "dialect": "postgresql",
-  "entries": [{ "idx": 0, "version": "7", "when": 1784450000000, "tag": "0000_pr_scoped_semantic_impact", "breakpoints": true }]
+  "entries": [
+    { "idx": 0, "version": "7", "when": 1784450000000, "tag": "0000_pr_scoped_semantic_impact", "breakpoints": true },
+    { "idx": 1, "version": "7", "when": 1784467800000, "tag": "0001_pr_comment_delivery_state", "breakpoints": true }
+  ]
 }
