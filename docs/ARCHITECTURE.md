@@ -113,6 +113,10 @@ The graph has one mutable materialized state per tracked repository branch. `gra
 ## Operational boundaries
 
 - The app supports one configured tracked branch per repository.
+- The initial HTTP service always embeds the durable workers. The Postgres queue
+  keeps webhook intake and long-running analysis separate even though they
+  share one Node process. A future horizontally scaled deployment will split
+  web and worker startup deliberately.
 - JavaScript/TypeScript projects receive a source graph; unsupported or dynamic framework profiles return graph-only/insufficient user-flow evidence, never fabricated impact.
 - GitHub/OpenAI failures use the queue reliability policy. A semantic failure produces a deterministic report fallback rather than blocking comment delivery.
 - Logs contain IDs, counts, timing, status, and safe errors only. They never include source excerpts, report Markdown, tokens, secrets, or private keys.

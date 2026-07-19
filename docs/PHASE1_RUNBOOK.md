@@ -34,17 +34,20 @@ Drizzle Kit commands are also wired:
 - Check migration health: `pnpm run db:check`
 - Open Drizzle Studio: `pnpm run db:studio`
 
-## 4) Start service and installation worker
+## 4) Start the service and embedded worker
 
-In one terminal, run:
+The single-service setup starts the HTTP server and all durable job workers in
+the same Node process. Run:
 
 `pnpm run dev`
 
-In a second terminal, run:
+The worker consumes installation, branch-push/reconciliation, PR-analysis, and
+PR-comment-delivery jobs. It builds initial graphs on installation, refreshes
+the tracked-branch graph on pushes, and persists/delivers deterministic PR
+impact reports.
 
-`pnpm run worker`
-
-The worker consumes `installation.sync`, `branch.push`, and `pull_request.analyze` jobs. It builds initial graphs on installation, refreshes the tracked-branch graph on pushes, and persists deterministic PR impact analyses.
+Do not run `pnpm run worker` alongside this server. A future horizontally
+scaled deployment will split web and worker startup deliberately.
 
 Health check:
 
