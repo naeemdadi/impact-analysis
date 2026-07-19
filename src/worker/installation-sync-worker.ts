@@ -4,6 +4,7 @@ import { buildAndPersistBaselineGraph } from "../graph/build-baseline.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
+import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
 
 const installationSyncPayloadSchema = z.object({
   installationId: z.number(),
@@ -34,6 +35,7 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
         { repoId, reuseReadySnapshot: true },
         repositoryReader,
       );
+      await enqueueFeatureIndex({ deliveryId: job.deliveryId, repoId, branch: result.branch, sha: result.sha, mode: "full" });
       log("info", "baseline snapshot ready", {
         jobId: job.id,
         repoId,

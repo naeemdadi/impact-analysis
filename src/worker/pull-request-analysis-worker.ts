@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
-import { findCompletedPrAnalysis, createBuildingPrAnalysis, failPrAnalysis, persistPrAnalysis } from "../impact/pr-analysis-repository.js";
+import { findCompletedPrAnalysis, createBuildingPrAnalysis, failPrAnalysis, getPrAnalysisId, persistPrAnalysis } from "../impact/pr-analysis-repository.js";
 import { buildPullRequestImpactAnalysis } from "../impact/pr-impact-service.js";
 import { ensurePrReport } from "../report/report-service.js";
+import { enqueuePullRequestDelivery } from "../delivery/pr-comment-delivery-queue.js";
+import { requestPrCommentDelivery } from "../delivery/pr-comment-delivery-repository.js";
 import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 
@@ -25,16 +27,41 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     payload = pullRequestPayloadSchema.parse(job.jobPayload);
     const existing = await findCompletedPrAnalysis(payload);
     if (existing) {
-      const report = await ensurePrReport(existing);
+      const report = await ensurePrReport(existing, undefined, new GitHubRepositoryReader());
+      await enqueueDeliverySafely({
+        deliveryId: job.deliveryId,
+        repoId: payload.repoId,
+        pullRequestNumber: payload.pullRequestNumber,
+        analysisId: await getPrAnalysisId(payload),
+        headSha: payload.headSha,
+        deliveryState: "ready",
+      });
       await completeJob(job.id);
       log("info", "pull request analysis reused", { jobId: job.id, repoId: payload.repoId, pullRequestNumber: payload.pullRequestNumber, headSha: payload.headSha, reportReused: report.reused, llmStatus: report.llmStatus });
       return true;
     }
 
     await createBuildingPrAnalysis(payload);
+    const analysisId = await getPrAnalysisId(payload);
+    await enqueueDeliverySafely({
+      deliveryId: job.deliveryId,
+      repoId: payload.repoId,
+      pullRequestNumber: payload.pullRequestNumber,
+      analysisId,
+      headSha: payload.headSha,
+      deliveryState: "running",
+    });
     const result = await buildPullRequestImpactAnalysis(payload, new GitHubRepositoryReader());
     await persistPrAnalysis(result);
-    const report = await ensurePrReport(result);
+    const report = await ensurePrReport(result, undefined, new GitHubRepositoryReader());
+    await enqueueDeliverySafely({
+      deliveryId: job.deliveryId,
+      repoId: payload.repoId,
+      pullRequestNumber: payload.pullRequestNumber,
+      analysisId,
+      headSha: payload.headSha,
+      deliveryState: "ready",
+    });
     await completeJob(job.id);
     log("info", "pull request analysis ready", {
       jobId: job.id,
@@ -49,11 +76,48 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "pull request analysis worker error";
-    if (payload) await failPrAnalysis(payload, message);
+    if (payload) {
+      await failPrAnalysis(payload, message);
+      await enqueueDeliverySafely({
+        deliveryId: job.deliveryId,
+        repoId: payload.repoId,
+        pullRequestNumber: payload.pullRequestNumber,
+        analysisId: await getPrAnalysisId(payload),
+        headSha: payload.headSha,
+        deliveryState: "failed",
+      });
+    }
     await failJob(job.id, message);
     log("error", "pull request analysis failed", { jobId: job.id, error: message });
   }
   return true;
+}
+
+async function enqueueDeliverySafely(input: {
+  deliveryId: string;
+  repoId: number;
+  pullRequestNumber: number;
+  analysisId: string;
+  headSha: string;
+  deliveryState: "running" | "ready" | "failed";
+}): Promise<void> {
+  try {
+    await requestPrCommentDelivery({
+      repoId: input.repoId,
+      pullRequestNumber: input.pullRequestNumber,
+      analysisId: input.analysisId,
+      headSha: input.headSha,
+    });
+    await enqueuePullRequestDelivery({ ...input, prAnalysisId: input.analysisId });
+  } catch (error) {
+    log("error", "failed to enqueue pull request comment delivery", {
+      repoId: input.repoId,
+      pullRequestNumber: input.pullRequestNumber,
+      headSha: input.headSha,
+      deliveryState: input.deliveryState,
+      error: error instanceof Error ? error.message : "unknown delivery enqueue error",
+    });
+  }
 }
 
 export async function runPullRequestAnalysisWorker(): Promise<void> {

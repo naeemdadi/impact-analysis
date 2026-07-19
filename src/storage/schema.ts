@@ -30,6 +30,9 @@ export const repoConfigTable = pgTable("repo_config", {
   // Why this configuration is active or inactive: active, suspended, removed, or deleted.
   // This prevents a later unsuspend event from reactivating a repository that was removed.
   accessState: text("access_state").notNull().default("active"),
+  // Per-repository control for bounded source context sent to OpenAI.
+  // Enabled by default; graph analysis stays deterministic regardless of this setting.
+  semanticAiEnabled: boolean("semantic_ai_enabled").notNull().default(true),
   // Row creation timestamp.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Last config update timestamp.
@@ -243,6 +246,62 @@ export const prReportTable = pgTable(
   },
   (table) => [
     uniqueIndex("pr_report_analysis_unique").on(table.prAnalysisId),
+  ],
+);
+
+// One mutable pointer to the single sticky GitHub timeline comment for a PR.
+// Analyses and reports are immutable per head SHA; this record selects which
+// report is currently visible to developers on the pull request.
+export const prCommentDeliveryTable = pgTable(
+  "pr_comment_delivery",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
+    pullRequestNumber: integer("pull_request_number").notNull(),
+    // GitHub issue-comment ID. Null until the first successful delivery.
+    commentId: bigint("comment_id", { mode: "number" }),
+    // Newest analysis selected for delivery; older queued jobs must not overwrite it.
+    desiredAnalysisId: uuid("desired_analysis_id").references(() => prAnalysisTable.id),
+    desiredHeadSha: text("desired_head_sha").notNull(),
+    lastDeliveredAnalysisId: uuid("last_delivered_analysis_id").references(() => prAnalysisTable.id),
+    lastDeliveredHeadSha: text("last_delivered_head_sha"),
+    // pending, delivered, or failed. Analysis/report lifecycle remains elsewhere.
+    status: text("status").notNull().default("pending"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("pr_comment_delivery_repo_pr_unique").on(table.repoId, table.pullRequestNumber),
+  ],
+);
+
+// One mutable source-backed feature description for a tracked-branch page or API route.
+// It is contextual guidance only; graph facts remain the evidence for reachability.
+export const featureCardTable = pgTable(
+  "feature_card",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
+    branch: text("branch").notNull(),
+    entryPath: text("entry_path").notNull(),
+    entryKind: text("entry_kind").notNull(),
+    // Hash of the entrypoint and selected reachable source blobs used as context.
+    sourceFingerprint: text("source_fingerprint").notNull(),
+    sourceCommitSha: text("source_commit_sha").notNull(),
+    // ready when validated semantic guidance exists; unavailable records why it does not.
+    status: text("status").notNull(),
+    cardJson: jsonb("card_json").$type<Record<string, unknown>>(),
+    provenanceJson: jsonb("provenance_json").$type<Record<string, unknown>>().notNull(),
+    model: text("model"),
+    providerResponseId: text("provider_response_id"),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("feature_card_repo_branch_entry_unique").on(table.repoId, table.branch, table.entryPath),
+    index("feature_card_repo_branch_fingerprint_idx").on(table.repoId, table.branch, table.sourceFingerprint),
   ],
 );
 

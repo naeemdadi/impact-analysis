@@ -5,12 +5,15 @@ import type { BaselineGraph, CommitFileChange, RepositoryReader, RepositorySourc
 import { getRepoConfig, updateRepoIdentity } from "../storage/repo-config-repo.js";
 import { analyzePrImpact, createInsufficientAnalysis } from "./pr-impact-engine.js";
 import type { DeterministicPrAnalysis, PullRequestAnalysisRequest } from "./pr-impact-types.js";
+import { errorMessage, log } from "../server/logger.js";
 
 /** Fetches exact PR source states and returns deterministic, non-persisted facts. */
 export async function buildPullRequestImpactAnalysis(
   request: PullRequestAnalysisRequest,
   repositoryReader: RepositoryReader,
 ): Promise<DeterministicPrAnalysis> {
+  const startedAt = Date.now();
+  log("info", "PR impact analysis started", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseRef: request.baseRef, baseSha: request.baseSha, headSha: request.headSha });
   const config = await getRepoConfig(request.repoId);
   if (!config) throw new Error(`repository configuration not found for ${request.repoId}`);
   if (!config.isActive) throw new Error(`repository ${request.repoId} is inactive`);
@@ -29,17 +32,22 @@ export async function buildPullRequestImpactAnalysis(
     afterSha: request.headSha,
   });
   if (!comparison.comparable) {
+    log("warn", "PR impact analysis has insufficient comparison evidence", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, headSha: request.headSha, reason: comparison.reason, changedFileCount: comparison.changes.length, durationMs: Date.now() - startedAt });
     return createInsufficientAnalysis(request, comparison.reason ?? "PR comparison is unavailable", comparison.changes);
   }
 
   try {
     const baseGraph = await loadBaseGraph(request, repositoryReader, sourceInput);
     const headGraph = await buildHeadGraph(baseGraph, comparison.changes, request.headSha, repositoryReader, sourceInput);
-    return analyzePrImpact({ request, baseGraph, headGraph, changes: comparison.changes });
+    const result = analyzePrImpact({ request, baseGraph, headGraph, changes: comparison.changes });
+    log("info", "PR impact analysis completed", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, headSha: request.headSha, changedFileCount: result.changedFiles.length, changedSymbolCount: result.changedSymbols.length, affectedItemCount: result.affectedItems.length, unresolvedImportCount: result.unresolvedImportCount, impactLevel: result.impactLevel, durationMs: Date.now() - startedAt });
+    return result;
   } catch (error) {
     if (error instanceof UnsupportedRepositoryError) {
+      log("warn", "PR impact analysis has unsupported source profile", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, headSha: request.headSha, reason: error.message, durationMs: Date.now() - startedAt });
       return createInsufficientAnalysis(request, error.message, comparison.changes);
     }
+    log("error", "PR impact analysis failed", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, headSha: request.headSha, durationMs: Date.now() - startedAt, error: errorMessage(error) });
     throw error;
   }
 }
@@ -50,9 +58,13 @@ async function loadBaseGraph(
   sourceInput: SourceInput,
 ): Promise<BaselineGraph> {
   const current = await loadReadyGraphByIdentity({ repoId: request.repoId, branch: request.baseRef, sha: request.baseSha });
-  if (current) return current.graph;
+  if (current) {
+    log("info", "PR impact analysis reused current base graph", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha, snapshotId: current.snapshotId });
+    return current.graph;
+  }
   // Historical graph rows are intentionally not retained. Build this exact base
   // in memory and leave the mutable tracked-branch graph untouched.
+  log("info", "PR impact analysis building ephemeral base graph", { repoId: request.repoId, pullRequestNumber: request.pullRequestNumber, baseSha: request.baseSha });
   return buildBaselineGraph(await repositoryReader.fetchSource({ ...sourceInput, sha: request.baseSha }));
 }
 
@@ -64,12 +76,14 @@ async function buildHeadGraph(
   sourceInput: SourceInput,
 ): Promise<BaselineGraph> {
   if (changes.some((change) => isTsconfigPath(change.path) || isTsconfigPath(change.previousPath ?? ""))) {
+    log("info", "PR impact analysis building full head graph because tsconfig changed", { repoId: sourceInput.repoId, headSha });
     return buildBaselineGraph(await repositoryReader.fetchSource({ ...sourceInput, sha: headSha }));
   }
   const tree = await repositoryReader.fetchTree({ ...sourceInput, sha: headSha });
   const allFilePaths = tree.map((entry) => entry.path);
   const targetPaths = new Set(allFilePaths.filter(isGraphFilePath));
   const reanalyzed = determineReanalyzedPaths(baseGraph, targetPaths, changes).reanalyzedPaths;
+  log("info", "PR impact analysis building incremental head graph", { repoId: sourceInput.repoId, headSha, changedFileCount: changes.length, reanalyzedFileCount: reanalyzed.length });
   const files = await repositoryReader.fetchFiles({
     ...sourceInput,
     sha: headSha,

@@ -64,6 +64,20 @@
       "when": 1784272000000,
       "tag": "0008_pr_report",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784275000000,
+      "tag": "0009_feature_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784280000000,
+      "tag": "0010_pr_comment_delivery",
+      "breakpoints": true
     }
   ]
 }

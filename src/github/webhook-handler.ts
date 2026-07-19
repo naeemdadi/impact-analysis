@@ -33,6 +33,7 @@ export async function handleGithubWebhook(request: WebhookRequest, response: Res
   const rawBody = request.rawBody;
 
   if (!deliveryId || !eventName || !signature || !rawBody) {
+    log("warn", "webhook rejected: required request data is missing", { hasDeliveryId: Boolean(deliveryId), hasEventName: Boolean(eventName), hasSignature: Boolean(signature), hasRawBody: Boolean(rawBody) });
     response.status(400).json({ error: "missing required webhook headers or raw body" });
     return;
   }
@@ -48,6 +49,8 @@ export async function handleGithubWebhook(request: WebhookRequest, response: Res
   }
 
   try {
+    const startedAt = Date.now();
+    log("info", "webhook accepted for processing", { deliveryId, eventName });
     const payload = JSON.parse(rawBody) as unknown;
     switch (eventName) {
       case "installation":
@@ -68,6 +71,7 @@ export async function handleGithubWebhook(request: WebhookRequest, response: Res
     }
 
     response.status(202).json({ accepted: true });
+    log("info", "webhook processing completed", { deliveryId, eventName, durationMs: Date.now() - startedAt });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     log("error", "webhook processing failed", {

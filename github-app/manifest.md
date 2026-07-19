@@ -15,7 +15,7 @@
 ## Repository Permissions
 
 - Metadata: Read-only
-- Pull requests: Read-only
+- Pull requests: Read and write
 - Contents: Read-only
 - Checks: Read and write
 
@@ -26,5 +26,5 @@
 ## Why This Is Minimum Viable
 
 - `metadata` and `contents` support repository identity and later diff access.
-- `pull_requests` is required for pull request payload and follow-up analysis in later phases.
+- `pull_requests` is required for pull request payload, follow-up analysis, and the Phase 6 sticky PR comment.
 - `checks` allows future check run status updates without re-registering app scopes.

@@ -17,6 +17,7 @@ async function main(): Promise<void> {
     trackedBranch,
     isActive: true,
     accessState: "active",
+    semanticAiEnabled: true,
   });
 }
 

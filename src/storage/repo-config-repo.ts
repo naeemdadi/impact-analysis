@@ -12,6 +12,7 @@ export interface RepoConfig {
   trackedBranch: string;
   isActive: boolean;
   accessState: RepoAccessState;
+  semanticAiEnabled: boolean;
 }
 
 export async function upsertRepoConfig(config: RepoConfig): Promise<void> {
@@ -25,6 +26,7 @@ export async function upsertRepoConfig(config: RepoConfig): Promise<void> {
       trackedBranch: config.trackedBranch,
       isActive: config.isActive,
       accessState: config.accessState,
+      semanticAiEnabled: config.semanticAiEnabled,
     })
     .onConflictDoUpdate({
       target: repoConfigTable.repoId,
@@ -50,6 +52,7 @@ export async function getRepoConfig(repoId: number): Promise<RepoConfig | null> 
       trackedBranch: repoConfigTable.trackedBranch,
       isActive: repoConfigTable.isActive,
       accessState: repoConfigTable.accessState,
+      semanticAiEnabled: repoConfigTable.semanticAiEnabled,
     })
     .from(repoConfigTable)
     .where(eq(repoConfigTable.repoId, repoId))
@@ -68,6 +71,7 @@ export async function getRepoConfig(repoId: number): Promise<RepoConfig | null> 
     trackedBranch: row.trackedBranch,
     isActive: row.isActive,
     accessState: row.accessState as RepoAccessState,
+    semanticAiEnabled: row.semanticAiEnabled,
   };
 }
 
@@ -83,6 +87,11 @@ export async function setRepoConfigAccessState(repoId: number, accessState: Repo
     .update(repoConfigTable)
     .set({ isActive: accessState === "active", accessState, updatedAt: sql`NOW()` })
     .where(eq(repoConfigTable.repoId, repoId));
+}
+
+/** Explicit repository consent for bounded source-context requests to OpenAI. */
+export async function setSemanticAiEnabled(repoId: number, semanticAiEnabled: boolean): Promise<void> {
+  await db.update(repoConfigTable).set({ semanticAiEnabled, updatedAt: sql`NOW()` }).where(eq(repoConfigTable.repoId, repoId));
 }
 
 export async function transitionInstallationRepoAccessState(
@@ -120,6 +129,7 @@ export async function getRepoConfigsForInstallation(installationId: number): Pro
       trackedBranch: repoConfigTable.trackedBranch,
       isActive: repoConfigTable.isActive,
       accessState: repoConfigTable.accessState,
+      semanticAiEnabled: repoConfigTable.semanticAiEnabled,
     })
     .from(repoConfigTable)
     .where(eq(repoConfigTable.installationId, installationId));

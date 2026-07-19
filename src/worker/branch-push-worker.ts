@@ -4,6 +4,7 @@ import { updateGraphIncrementally } from "../graph/update-incremental.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
+import { enqueueFeatureIndex } from "../feature/feature-index-queue.js";
 
 const pushPayloadSchema = z.object({
   repoId: z.number(),
@@ -18,11 +19,19 @@ export async function processNextBranchPushJob(): Promise<boolean> {
   try {
     const payload = pushPayloadSchema.parse(job.jobPayload);
     const result = await updateGraphIncrementally(payload, new GitHubRepositoryReader());
-    await completeJob(job.id);
     if (result?.status === "superseded") {
+      await completeJob(job.id);
       log("info", "push graph update superseded by newer branch head", { jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha, liveSha: result.liveSha });
       return true;
     }
+    if (result) await enqueueFeatureIndex({
+      deliveryId: job.deliveryId, repoId: payload.repoId, branch: payload.branch, sha: result.sha,
+      // A full graph fallback intentionally refreshes all feature cards because
+      // comparison/configuration evidence was not safe to scope further.
+      mode: result.buildMode === "incremental" ? "incremental" : "full",
+      changedPaths: result.featureIndexPaths,
+    });
+    await completeJob(job.id);
     log("info", result ? "push graph snapshot ready" : "push graph build skipped for deleted branch", {
       jobId: job.id, repoId: payload.repoId, branch: payload.branch, afterSha: payload.afterSha,
       snapshotId: result?.snapshotId, buildMode: result?.buildMode, buildDurationMs: result?.buildDurationMs,

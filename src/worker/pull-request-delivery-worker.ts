@@ -1,0 +1,45 @@
+import { z } from "zod";
+
+import { GitHubPullRequestCommentWriter } from "../github/pull-request-comment-writer.js";
+import { claimNextJob, completeJob, failJob } from "../queue/worker-repository.js";
+import { log } from "../server/logger.js";
+import { markPrCommentDeliveryFailed } from "../delivery/pr-comment-delivery-repository.js";
+import { deliverPullRequestComment } from "../delivery/pr-comment-delivery-service.js";
+
+const deliveryPayloadSchema = z.object({
+  repoId: z.number(),
+  pullRequestNumber: z.number(),
+  prAnalysisId: z.string().uuid(),
+  headSha: z.string(),
+  deliveryState: z.enum(["running", "ready", "failed"]),
+});
+
+export async function processNextPullRequestDeliveryJob(): Promise<boolean> {
+  const job = await claimNextJob("pull_request.deliver");
+  if (!job) return false;
+  let payload: z.infer<typeof deliveryPayloadSchema> | null = null;
+  const startedAt = Date.now();
+  try {
+    payload = deliveryPayloadSchema.parse(job.jobPayload);
+    const result = await deliverPullRequestComment(payload, new GitHubPullRequestCommentWriter());
+    await completeJob(job.id);
+    log("info", "pull request comment delivered", {
+      jobId: job.id, repoId: payload.repoId, pullRequestNumber: payload.pullRequestNumber,
+      headSha: payload.headSha, commentId: result.commentId, action: result.action, durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "pull request comment delivery failed";
+    if (payload) await markPrCommentDeliveryFailed({ ...payload, analysisId: payload.prAnalysisId, error: message });
+    await failJob(job.id, message);
+    log("error", "pull request comment delivery failed", {
+      jobId: job.id, repoId: payload?.repoId ?? null, pullRequestNumber: payload?.pullRequestNumber ?? null,
+      headSha: payload?.headSha ?? null, error: message, durationMs: Date.now() - startedAt,
+    });
+  }
+  return true;
+}
+
+export async function runPullRequestDeliveryWorker(): Promise<void> {
+  log("info", "pull request delivery worker started");
+  while (true) if (!await processNextPullRequestDeliveryJob()) await new Promise((resolve) => setTimeout(resolve, 1_000));
+}

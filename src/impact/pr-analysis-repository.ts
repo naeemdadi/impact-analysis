@@ -25,6 +25,21 @@ export async function getPrAnalysisId(input: Pick<PullRequestAnalysisRequest, "r
   return rows[0].id;
 }
 
+export async function getPrAnalysisDeliveryState(analysisId: string): Promise<{
+  status: string;
+  baseSha: string;
+  headSha: string;
+  reason: string | null;
+} | null> {
+  const rows = await db.select({
+    status: prAnalysisTable.status,
+    baseSha: prAnalysisTable.baseSha,
+    headSha: prAnalysisTable.headSha,
+    reason: prAnalysisTable.reason,
+  }).from(prAnalysisTable).where(eq(prAnalysisTable.id, analysisId)).limit(1);
+  return rows[0] ?? null;
+}
+
 export async function createBuildingPrAnalysis(request: PullRequestAnalysisRequest): Promise<void> {
   await db.insert(prAnalysisTable).values({
     repoId: request.repoId,

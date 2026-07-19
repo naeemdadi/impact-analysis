@@ -125,6 +125,13 @@ export interface SupersededGraphUpdateResult {
   liveSha: string;
 }
 
+/** Additional non-persisted data used to scope downstream feature-card work. */
+export interface IncrementalGraphUpdateResult extends BaselineBuildResult {
+  // Paths reanalyzed while producing the current graph. They include reverse
+  // dependents of deleted/renamed files, which makes them safe feature-index seeds.
+  featureIndexPaths: string[];
+}
+
 export interface RepositoryReader {
   resolveRepository(repoId: number, installationId: number): Promise<{
     owner: string;

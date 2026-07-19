@@ -164,7 +164,20 @@ Generate developer friendly output from deterministic evidence only.
 - Low confidence cases show partial confidence message
 - Output format matches target in `docs/PRODUCT.md`
 
+### Future Enhancement: Feature-Map Context Quality
+
+- Map tRPC client calls to named server procedures so a page’s feature context includes only the procedures it uses, not every router imported by the tRPC root.
+- Rank bounded context toward route UI, stateful components, and procedure call sites instead of breadth-first import order; generic UI primitives and utilities are lower priority.
+- Record context selection reasons, selected/reachable file counts, and truncation status with each feature card.
+- Share common context for route families, such as seller-directory pages, while retaining route-specific scenarios and metadata.
+- tRPC transport adapters (`/api/trpc` and variants) are excluded from product feature cards; their graph facts remain available as deterministic infrastructure evidence.
+
 ## Phase 6: PR Delivery UX
+
+### Status
+
+- Implementation complete; apply the Phase 6 migration and approve the GitHub App's updated pull-request write permission before live delivery.
+- Automated comment-body coverage added; live PR-comment acceptance remains to be run against an installed repository.
 
 ### Goal
 
