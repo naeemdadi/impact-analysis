@@ -21,6 +21,7 @@
     "pr-report:rebuild": "tsx scripts/rebuild-pr-report.ts",
     "reliability:status": "tsx scripts/reliability-status.ts",
     "test:phase7": "tsx --test scripts/phase7.reliability.test.ts",
+    "test:js-ts-ecosystem": "tsx --test scripts/js-ts-ecosystem.test.ts",
     "db:docker:up": "docker compose up -d postgres",
     "db:docker:down": "docker compose down",
     "db:docker:reset": "docker compose down -v && ./scripts/db-docker-init.sh",

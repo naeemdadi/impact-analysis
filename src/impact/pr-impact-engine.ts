@@ -46,16 +46,18 @@ export function analyzePrImpact(input: {
   const changedSymbols = compareSymbols(input.baseGraph.symbols, input.headGraph.symbols, changedFiles);
   const headFiles = new Map(input.headGraph.files.map((file) => [file.path, file]));
   const baseFiles = new Map(input.baseGraph.files.map((file) => [file.path, file]));
+  const headEntrypoints = entrypointsByFile(input.headGraph);
+  const baseEntrypoints = entrypointsByFile(input.baseGraph);
   const candidates = new Map<string, AffectedItem>();
 
   for (const change of changedFiles) {
     if (!change.graphRelevant) continue;
     const headFile = headFiles.get(change.path);
-    if (headFile) addTraversal(candidates, headFile.path, input.headGraph, "direct");
+    if (headFile) addTraversal(candidates, headFile.path, input.headGraph, headEntrypoints, "direct");
     // A removed source file has no node in the PR-head graph. Its old reverse
     // edges are still valid evidence of what the removal can affect.
     if (change.status === "removed" && baseFiles.has(change.path)) {
-      addTraversal(candidates, change.path, input.baseGraph, "direct");
+      addTraversal(candidates, change.path, input.baseGraph, baseEntrypoints, "direct");
     }
   }
 
@@ -63,7 +65,7 @@ export function analyzePrImpact(input: {
   const entrypointCount = affectedItems.filter((item) => item.kind === "page" || item.kind === "api_route").length;
   const changedRoute = changedFiles.some((change) => {
     const file = headFiles.get(change.path) ?? (change.status === "removed" ? baseFiles.get(change.path) : undefined);
-    return file?.kind === "page" || file?.kind === "api_route";
+    return Boolean((headEntrypoints.get(change.path) ?? baseEntrypoints.get(change.path))?.length) || file?.kind === "page" || file?.kind === "api_route";
   });
 
   return {
@@ -112,13 +114,16 @@ function toChangedSymbol(changeKind: ChangedSymbol["changeKind"], symbol: GraphS
   return { changeKind, filePath: symbol.filePath, symbolKey: symbol.symbolKey, name: symbol.name, kind: symbol.kind };
 }
 
-function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, graph: BaselineGraph, seedImpact: "direct"): void {
+function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, graph: BaselineGraph, entrypoints: Map<string, NonNullable<BaselineGraph["entrypoints"]>[number][]>, seedImpact: "direct"): void {
   const files = new Map(graph.files.map((file) => [file.path, file]));
   if (!files.has(seedPath)) return;
   const dependents = new Map<string, string[]>();
   for (const edge of graph.imports) {
     if (edge.resolutionStatus !== "resolved" || !edge.toPath) continue;
     dependents.set(edge.toPath, [...(dependents.get(edge.toPath) ?? []), edge.fromPath]);
+  }
+  for (const binding of graph.protocolBindings ?? []) {
+    dependents.set(binding.handlerFilePath, [...(dependents.get(binding.handlerFilePath) ?? []), binding.callerFilePath]);
   }
   for (const paths of dependents.values()) paths.sort();
 
@@ -131,7 +136,14 @@ function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, g
     const file = files.get(current.path);
     if (!file) continue;
     const impact = current.path === seedPath ? seedImpact : "indirect";
-    if (productKinds.has(file.kind as ProductImpactKind)) {
+    for (const entrypoint of entrypoints.get(file.path) ?? []) {
+      const kind: Extract<ProductImpactKind, "page" | "api_route"> = entrypoint.kind === "web_route" ? "page" : "api_route";
+      const candidate: AffectedItem = { path: file.path, kind, projectRoot: entrypoint.projectRoot, routePath: entrypoint.routePath, httpMethod: entrypoint.httpMethod, entrypointReason: entrypoint.reason, impact, dependencyPath: current.dependencyPath };
+      const key = entrypointIdentity(candidate);
+      const prior = candidates.get(key);
+      if (!prior || shouldReplaceAffected(prior, candidate)) candidates.set(key, candidate);
+    }
+    if ((entrypoints.get(file.path) ?? []).length === 0 && productKinds.has(file.kind as ProductImpactKind)) {
       const candidate: AffectedItem = { path: file.path, kind: file.kind as ProductImpactKind, impact, dependencyPath: current.dependencyPath };
       const prior = candidates.get(file.path);
       if (!prior || shouldReplaceAffected(prior, candidate)) candidates.set(file.path, candidate);
@@ -155,5 +167,12 @@ function classifyImpactLevel(entrypointCount: number, changedRoute: boolean): Im
 }
 
 function compareAffectedItems(left: AffectedItem, right: AffectedItem): number {
-  return left.kind.localeCompare(right.kind) || left.path.localeCompare(right.path);
+  return left.kind.localeCompare(right.kind) || (left.projectRoot ?? "").localeCompare(right.projectRoot ?? "") || (left.routePath ?? left.path).localeCompare(right.routePath ?? right.path) || left.path.localeCompare(right.path);
 }
+
+function entrypointsByFile(graph: BaselineGraph): Map<string, NonNullable<BaselineGraph["entrypoints"]>> {
+  const result = new Map<string, NonNullable<BaselineGraph["entrypoints"]>>();
+  for (const entrypoint of graph.entrypoints ?? []) result.set(entrypoint.filePath, [...(result.get(entrypoint.filePath) ?? []), entrypoint]);
+  return result;
+}
+function entrypointIdentity(item: AffectedItem): string { return [item.projectRoot ?? "", item.kind, item.httpMethod ?? "", item.routePath ?? item.path].join("\u0000"); }

@@ -1,4 +1,4 @@
-import { buildBaselineGraph, isGraphFilePath, UnsupportedRepositoryError } from "../graph/baseline-graph-builder.js";
+import { buildBaselineGraph, isGraphConfigurationPath, isGraphFilePath, UnsupportedRepositoryError } from "../graph/baseline-graph-builder.js";
 import { buildIncrementalGraph, determineReanalyzedPaths } from "../graph/incremental-graph-builder.js";
 import { loadReadyGraphByIdentity } from "../graph/snapshot-repository.js";
 import type { BaselineGraph, CommitFileChange, RepositoryReader, RepositorySource } from "../graph/types.js";
@@ -96,8 +96,8 @@ async function buildHeadGraph(
   repositoryReader: RepositoryReader,
   sourceInput: SourceInput,
 ): Promise<BaselineGraph> {
-  if (changes.some((change) => isTsconfigPath(change.path) || isTsconfigPath(change.previousPath ?? ""))) {
-    log("info", "PR impact analysis building full head graph because tsconfig changed", { repoId: sourceInput.repoId, headSha });
+  if (changes.some((change) => isGraphConfigurationPath(change.path) || isGraphConfigurationPath(change.previousPath ?? "")) || (baseGraph.projects ?? []).some((project) => project.protocolProfiles.includes("trpc"))) {
+    log("info", "PR impact analysis building full head graph because project configuration or tRPC bindings require it", { repoId: sourceInput.repoId, headSha });
     return buildBaselineGraph(await repositoryReader.fetchSource({ ...sourceInput, sha: headSha }));
   }
   const tree = await repositoryReader.fetchTree({ ...sourceInput, sha: headSha });
@@ -108,7 +108,7 @@ async function buildHeadGraph(
   const files = await repositoryReader.fetchFiles({
     ...sourceInput,
     sha: headSha,
-    paths: [...new Set(["tsconfig.json", ...reanalyzed])],
+    paths: [...new Set([...allFilePaths.filter(isGraphConfigurationPath), ...reanalyzed])],
   });
   const targetSource: RepositorySource = { ...sourceInput, sha: headSha, allFilePaths, files };
   return buildIncrementalGraph({ previousGraph: baseGraph, targetSource, changes }).graph;
@@ -120,8 +120,4 @@ interface SourceInput {
   owner: string;
   name: string;
   branch: string;
-}
-
-function isTsconfigPath(filePath: string): boolean {
-  return /(^|\/)tsconfig(?:\.[^/]+)?\.json$/.test(filePath);
 }

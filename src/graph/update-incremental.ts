@@ -1,5 +1,5 @@
 import { buildAndPersistBaselineGraph } from "./build-baseline.js";
-import { isGraphFilePath } from "./baseline-graph-builder.js";
+import { isGraphConfigurationPath, isGraphFilePath } from "./baseline-graph-builder.js";
 import { buildIncrementalGraph, determineReanalyzedPaths } from "./incremental-graph-builder.js";
 import { createBuildingSnapshot, findReadySnapshotByIdentity, loadReadyGraphByIdentity, markSnapshotFailed, persistReadySnapshot } from "./snapshot-repository.js";
 import { getRepoConfig, updateRepoIdentity } from "../storage/repo-config-repo.js";
@@ -40,8 +40,8 @@ export async function updateGraphIncrementally(
   const comparison = await repositoryReader.compareCommits({ ...githubInput, beforeSha: request.beforeSha, afterSha: request.afterSha });
   const forcedFallback = !comparison.comparable
     ? comparison.reason ?? "commit comparison unavailable"
-    : comparison.changes.some((change) => isTsconfigPath(change.path) || isTsconfigPath(change.previousPath ?? ""))
-      ? "tsconfig.json changed"
+    : comparison.changes.some((change) => isGraphConfigurationPath(change.path) || isGraphConfigurationPath(change.previousPath ?? ""))
+      ? "project/workspace configuration changed"
       : null;
   if (forcedFallback) {
     log("warn", "incremental graph update using full fallback", { repoId: request.repoId, branch: request.branch, afterSha: request.afterSha, reason: forcedFallback, changedFileCount: comparison.changes.length });
@@ -55,12 +55,18 @@ export async function updateGraphIncrementally(
     return fullFallback(request, repositoryReader, reason, comparison.changes.map((change) => change.path));
   }
 
+  if ((base.graph.projects ?? []).some((project) => project.protocolProfiles.includes("trpc")) && comparison.changes.some((change) => isGraphFilePath(change.path) || isGraphFilePath(change.previousPath ?? ""))) {
+    const reason = "tRPC protocol bindings require a complete exact-SHA refresh";
+    log("info", "incremental graph update using full fallback", { repoId: request.repoId, branch: request.branch, afterSha: request.afterSha, reason, changedFileCount: comparison.changes.length });
+    return fullFallback(request, repositoryReader, reason, comparison.changes.map((change) => change.path));
+  }
+
   try {
     const tree = await repositoryReader.fetchTree({ ...githubInput, sha: request.afterSha });
     const targetPaths = tree.map((entry) => entry.path);
     const provisional = determineReanalyzedPaths(base.graph, new Set(targetPaths.filter(isGraphFilePath)), comparison.changes);
     log("info", "incremental graph analysis planned", { repoId: request.repoId, branch: request.branch, afterSha: request.afterSha, changedFileCount: provisional.changedFileCount, reanalyzedFileCount: provisional.reanalyzedPaths.length });
-    const requiredPaths = [...new Set(["tsconfig.json", ...provisional.reanalyzedPaths])];
+    const requiredPaths = [...new Set([...targetPaths.filter(isGraphConfigurationPath), ...provisional.reanalyzedPaths])];
     const files = await repositoryReader.fetchFiles({ ...githubInput, sha: request.afterSha, paths: requiredPaths });
     const targetSource: RepositorySource = { ...emptyTargetSource(githubInput, request.afterSha, targetPaths), files };
     const incremental = buildIncrementalGraph({ previousGraph: base.graph, targetSource, changes: comparison.changes });
@@ -74,7 +80,7 @@ export async function updateGraphIncrementally(
         buildDurationMs: Date.now() - startedAt,
         metadata: { buildMode: "incremental", baseSnapshotId: base.snapshotId, changedFileCount: incremental.changedFileCount, reanalyzedFileCount: incremental.reanalyzedPaths.length },
       });
-      log("info", "incremental graph update completed", { repoId: result.repoId, branch: result.branch, afterSha: result.sha, snapshotId: result.snapshotId, buildMode: result.buildMode, changedFileCount: result.changedFileCount, reanalyzedFileCount: result.reanalyzedFileCount, durationMs: result.buildDurationMs });
+      log("info", "incremental graph update completed", { repoId: result.repoId, branch: result.branch, afterSha: result.sha, snapshotId: result.snapshotId, buildMode: result.buildMode, projectCount: result.projectCount, entrypointCount: result.entrypointCount, protocolBindingCount: result.protocolBindingCount, changedFileCount: result.changedFileCount, reanalyzedFileCount: result.reanalyzedFileCount, durationMs: result.buildDurationMs });
       return { ...result, reanalyzedPaths: incremental.reanalyzedPaths };
     } catch (error) {
       await markSnapshotFailed(snapshotId, error instanceof Error ? error.message : "incremental snapshot persistence failed", Date.now() - startedAt);
@@ -97,8 +103,4 @@ async function fullFallback(request: IncrementalGraphUpdateRequest, repositoryRe
 
 function emptyTargetSource(identity: { repoId: number; owner: string; name: string; branch: string }, sha: string, allFilePaths: string[]): RepositorySource {
   return { ...identity, sha, allFilePaths, files: [] };
-}
-
-function isTsconfigPath(path: string): boolean {
-  return /(^|\/)tsconfig(?:\.[^/]+)?\.json$/.test(path);
 }

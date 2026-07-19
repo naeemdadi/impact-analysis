@@ -30,6 +30,11 @@ export interface ChangedSymbol {
 export interface AffectedItem {
   path: string;
   kind: ProductImpactKind;
+  /** Framework-proven identity; absent only for legacy technical items. */
+  projectRoot?: string;
+  routePath?: string;
+  httpMethod?: string | null;
+  entrypointReason?: string;
   impact: "direct" | "indirect";
   // Ordered from the changed source file to this affected file.
   dependencyPath: string[];
@@ -74,6 +79,10 @@ export const deterministicPrAnalysisSchema = z.object({
   affectedItems: z.array(z.object({
     path: z.string(),
     kind: z.enum(["page", "api_route", "component", "shared_module"]),
+    projectRoot: z.string().optional(),
+    routePath: z.string().optional(),
+    httpMethod: z.string().nullable().optional(),
+    entrypointReason: z.string().optional(),
     impact: z.enum(["direct", "indirect"]),
     dependencyPath: z.array(z.string()).min(1),
   })),

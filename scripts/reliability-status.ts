@@ -17,8 +17,12 @@ const rows = await db.execute(sql`
   ORDER BY job_type, status
 `);
 const graphs = await db.execute(sql`
-  SELECT repo_id, branch, commit_sha, build_duration_ms, completed_at
+  SELECT repo_id, branch, commit_sha, project_count, entrypoint_count, protocol_binding_count, build_duration_ms, completed_at
   FROM graph_snapshot WHERE is_current = true ORDER BY completed_at DESC
+`);
+const projects = await db.execute(sql`
+  SELECT repo_id, root_path, package_name, primary_framework, status, reason
+  FROM graph_project WHERE is_active = true ORDER BY repo_id, root_path
 `);
 const recentPrs = await db.execute(sql`
   SELECT a.repo_id, a.pull_request_number, a.head_sha, a.status AS analysis_status,
@@ -41,5 +45,5 @@ for (const config of await listActiveRepoConfigs()) {
     staleBranches.push({ repoId: config.repoId, branch: config.trackedBranch, currentSha: currentByBranch.get(`${config.repoId}:${config.trackedBranch}`) ?? null, liveSha: null, error: error instanceof Error ? error.message : "unknown error" });
   }
 }
-console.log(JSON.stringify({ generatedAt: new Date().toISOString(), jobs: rows.rows, currentGraphs: graphs.rows, staleBranches, recentPrs: recentPrs.rows }, null, 2));
+console.log(JSON.stringify({ generatedAt: new Date().toISOString(), jobs: rows.rows, currentGraphs: graphs.rows, projects: projects.rows, staleBranches, recentPrs: recentPrs.rows }, null, 2));
 await pool.end();

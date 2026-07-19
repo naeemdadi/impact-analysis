@@ -26,7 +26,7 @@ flowchart TD
 
 Installation and tracked-branch push workers only build or update the deterministic graph. They never send source to OpenAI and do not maintain feature summaries.
 
-Each graph stores file kind, symbols, resolved imports, and a conservative technical role:
+Each graph stores project identity, generic file kind, symbols, resolved imports, framework entrypoints, optional protocol bindings, and a conservative technical role:
 
 | Role | Meaning |
 |---|---|
@@ -55,7 +55,7 @@ The role policy reads roles from those exact ephemeral graphs and persists `pr_i
 | Technical-only | Analytics, infrastructure, styling, configuration, testing, or UI primitive changes. |
 | Evidence-only | A changed seed with no reliable role. |
 
-Only pages and API routes are verification targets. A route appears once at its highest tier. Components and shared modules remain in technical evidence, not as duplicate user tasks.
+Only framework-proven pages and API routes are verification targets. A route appears once at its highest tier. Components and shared modules remain in technical evidence, not as duplicate user tasks.
 
 ## Optional PR semantic analysis
 
@@ -95,21 +95,25 @@ The rendered comment contains:
 ```mermaid
 erDiagram
   REPO_CONFIG ||--o{ GRAPH_SNAPSHOT : owns
+  REPO_CONFIG ||--o{ GRAPH_PROJECT : contains
   GRAPH_SNAPSHOT ||--o{ GRAPH_FILE : materializes
+  GRAPH_PROJECT ||--o{ GRAPH_FILE : owns
   GRAPH_FILE ||--o{ GRAPH_SYMBOL : declares
   GRAPH_FILE ||--o{ GRAPH_IMPORT : imports
+  GRAPH_SNAPSHOT ||--o{ GRAPH_ENTRYPOINT : proves
+  GRAPH_SNAPSHOT ||--o{ GRAPH_PROTOCOL_BINDING : proves
   REPO_CONFIG ||--o{ PR_ANALYSIS : analyzes
   PR_ANALYSIS ||--|| PR_IMPACT_ASSESSMENT : prioritizes
   PR_ANALYSIS ||--|| PR_REPORT : renders
   REPO_CONFIG ||--o{ PR_COMMENT_DELIVERY : delivers
 ```
 
-The graph has one mutable materialized state per tracked repository branch. `graph_snapshot` keeps immutable metadata for each analyzed SHA; graph file/symbol/import facts move to the current snapshot. PR base/head graphs remain in memory.
+The graph has one mutable materialized state per tracked repository branch. `graph_snapshot` keeps immutable metadata for each analyzed SHA; graph project/file/symbol/import/entrypoint/protocol facts move to the current snapshot. PR base/head graphs remain in memory.
 
 ## Operational boundaries
 
 - The app supports one configured tracked branch per repository.
-- Unsupported source profiles return insufficient evidence, never fabricated impact.
+- JavaScript/TypeScript projects receive a source graph; unsupported or dynamic framework profiles return graph-only/insufficient user-flow evidence, never fabricated impact.
 - GitHub/OpenAI failures use the queue reliability policy. A semantic failure produces a deterministic report fallback rather than blocking comment delivery.
 - Logs contain IDs, counts, timing, status, and safe errors only. They never include source excerpts, report Markdown, tokens, secrets, or private keys.
 

@@ -63,7 +63,7 @@ export async function buildAndPersistBaselineGraph(
     });
     log("info", "baseline graph source fetched", { repoId: config.repoId, branch: config.trackedBranch, sha, sourceFileCount: source.files.length, treePathCount: source.allFilePaths?.length ?? source.files.length });
     const graph = buildBaselineGraph(source);
-    log("info", "baseline graph source analyzed", { repoId: config.repoId, branch: config.trackedBranch, sha, fileCount: graph.files.length, symbolCount: graph.symbols.length, importCount: graph.imports.length });
+    log("info", "baseline graph source analyzed", { repoId: config.repoId, branch: config.trackedBranch, sha, projectCount: graph.projects?.length ?? 0, graphOnlyProjectCount: (graph.projects ?? []).filter((project) => project.status === "graph_only" || project.status === "ambiguous").length, entrypointCount: graph.entrypoints?.length ?? 0, protocolBindingCount: graph.protocolBindings?.length ?? 0, fileCount: graph.files.length, symbolCount: graph.symbols.length, importCount: graph.imports.length });
     const result = await persistReadySnapshot({
       snapshotId,
       repoId: config.repoId,
@@ -78,7 +78,7 @@ export async function buildAndPersistBaselineGraph(
         fallbackReason: request.buildMetadata?.fallbackReason ?? null,
       },
     });
-    log("info", "baseline graph build completed", { repoId: result.repoId, branch: result.branch, sha: result.sha, snapshotId: result.snapshotId, fileCount: result.fileCount, symbolCount: result.symbolCount, importCount: result.importCount, unresolvedImportCount: result.unresolvedImportCount, durationMs: result.buildDurationMs, buildMode: result.buildMode });
+    log("info", "baseline graph build completed", { repoId: result.repoId, branch: result.branch, sha: result.sha, snapshotId: result.snapshotId, projectCount: result.projectCount, entrypointCount: result.entrypointCount, protocolBindingCount: result.protocolBindingCount, fileCount: result.fileCount, symbolCount: result.symbolCount, importCount: result.importCount, unresolvedImportCount: result.unresolvedImportCount, durationMs: result.buildDurationMs, buildMode: result.buildMode });
     return result;
   } catch (error) {
     const message = errorMessage(error);

@@ -9,7 +9,8 @@ This plan is phase based so we can execute one phase at a time with clear exit c
 ## Scope Lock for MVP
 
 - One tracked base branch per repository
-- Next.js plus React plus TypeScript repositories only
+- JavaScript and TypeScript repositories with deterministic module-graph support
+- Full entrypoint support for Next.js, React Router, Remix, and Express; tRPC bindings when statically proven
 - Pull request analysis for `opened` `synchronize` and `reopened`
 - Report posted as one sticky PR comment
 - Deterministic evidence first then LLM explanation
@@ -215,7 +216,27 @@ Handle real world event issues and failure modes.
 - PR analysis can recover to valid snapshot automatically
 - Core flows pass reliability checklist in staging
 
-## Phase 8: Hackathon Submission Readiness
+## Phase 8: JS/TS Ecosystem Graph Expansion
+
+### Goal
+
+Support project-aware JavaScript/TypeScript repositories and workspaces without weakening evidence requirements.
+
+### Deliverables
+
+- Workspace/package discovery and per-project resolver configuration
+- Next.js, React Router, Remix, Express, and tRPC adapters
+- Project, entrypoint, and protocol-binding graph facts
+- Project-aware PR impact/report grouping and clean schema reset
+- Explicit graph-only evidence for unsupported/dynamic application profiles
+
+### Exit Criteria
+
+- A shared workspace package change reaches only importing application routes
+- Dynamic route/procedure configuration creates no fabricated verification target
+- Exact tracked-branch baseline, incremental update, and PR graphs remain deterministic
+
+## Phase 9: Hackathon Submission Readiness
 
 ### Goal
 

@@ -34,7 +34,7 @@ export function renderReport(
       for (const scenario of scenarios) {
         lines.push(`${scenarioNumber}. **${scenario.title}**`, `   _Route: ${displayEntrypoint(item)}_`, "");
         if (scenario.setup) lines.push(`   **Setup:** ${scenario.setup}`, "");
-        lines.push("   **Do:**", ...scenario.actions.map((action) => `   - ${action}`), "", "   **Expected:**", ...scenario.expected.map((expected) => `   - ${expected}`), "");
+        lines.push("   **Do:**", ...scenario.actions.map((action) => `   - ${action}`), "", "   **Expected Outcome:**", ...scenario.expected.map((expected) => `   - ${expected}`), "");
         lines.push(`   **Why:** ${humanImpactReason(item, evidence, semanticInput)}`, "");
         scenarioNumber += 1;
       }
@@ -52,7 +52,10 @@ export function renderReport(
   return lines.join("\n");
 }
 
-export function targetIdFor(item: Pick<ImpactAssessmentItem, "path">): string { return `entry:${item.path}`; }
+export function targetIdFor(item: Pick<ImpactAssessmentItem, "path" | "projectRoot" | "kind" | "httpMethod" | "routePath">): string {
+  if (!item.projectRoot && !item.routePath && !item.httpMethod) return `entry:${item.path}`;
+  return `entry:${item.projectRoot ?? ""}:${item.kind}:${item.httpMethod ?? ""}:${item.routePath ?? item.path}`;
+}
 
 function deterministicChangeSummary(evidence: ReportEvidence): string[] {
   if (evidence.changedSymbols.length) return evidence.changedSymbols.slice(0, 8).map((symbol) => `${capitalize(symbol.changeKind)} ${formatSymbolName(symbol.name)}.`);
@@ -61,8 +64,10 @@ function deterministicChangeSummary(evidence: ReportEvidence): string[] {
 }
 
 function displayEntrypoint(item: ImpactAssessmentItem): string {
-  if (item.kind === "api_route") return `API ${routePath(item.path)}`;
-  return routePath(item.path);
+  const route = item.routePath ?? routePath(item.path);
+  const project = item.projectRoot ? `${item.projectRoot} · ` : "";
+  if (item.kind === "api_route") return `${project}${item.httpMethod ? `${item.httpMethod} ` : ""}API ${route}`;
+  return `${project}${route}`;
 }
 
 function humanImpactReason(item: ImpactAssessmentItem, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {

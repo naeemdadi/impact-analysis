@@ -16,7 +16,7 @@ export function buildReportEvidence(analysisInput: DeterministicPrAnalysis, impa
     unresolvedImportCount: analysis.unresolvedImportCount,
     changedFiles: analysis.changedFiles,
     changedSymbols: analysis.changedSymbols.map((symbol) => ({ id: `symbol:${symbol.symbolKey}`, name: symbol.name, changeKind: symbol.changeKind, filePath: symbol.filePath })).sort((a, b) => a.id.localeCompare(b.id)),
-    affectedItems: analysis.affectedItems.map((item) => ({ id: `affected:${item.path}`, path: item.path, kind: item.kind, impact: item.impact, dependencyPath: item.dependencyPath })).sort((a, b) => a.kind.localeCompare(b.kind) || a.path.localeCompare(b.path)),
+    affectedItems: analysis.affectedItems.map((item) => ({ id: `affected:${item.projectRoot ?? ""}:${item.kind}:${item.httpMethod ?? ""}:${item.routePath ?? item.path}`, path: item.path, kind: item.kind, projectRoot: item.projectRoot, routePath: item.routePath, httpMethod: item.httpMethod, impact: item.impact, dependencyPath: item.dependencyPath })).sort((a, b) => a.kind.localeCompare(b.kind) || (a.projectRoot ?? "").localeCompare(b.projectRoot ?? "") || (a.routePath ?? a.path).localeCompare(b.routePath ?? b.path)),
     impactAssessment,
   };
 }

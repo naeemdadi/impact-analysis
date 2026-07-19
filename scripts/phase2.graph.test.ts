@@ -55,8 +55,8 @@ test("builds deterministic files, symbols, import edges, and Next.js classificat
       ["src/app/api/checkout/route.ts", "api_route"],
       ["src/app/checkout/page.tsx", "page"],
       ["src/components/PriceSummary.tsx", "component"],
-      ["src/lib/discount.ts", "shared_module"],
-      ["src/lib/uses-external.ts", "shared_module"],
+      ["src/lib/discount.ts", "module"],
+      ["src/lib/uses-external.ts", "module"],
     ],
   );
   assert.ok(graph.symbols.some((symbol) => symbol.symbolKey === "src/lib/discount.ts:function:calculateDiscount"));
@@ -92,8 +92,10 @@ test("records external and unresolved imports without inventing targets", () => 
   assert.match(unresolved?.unresolvedReason ?? "", /could not be resolved/);
 });
 
-test("requires a valid root tsconfig", () => {
+test("uses conservative JavaScript defaults when no tsconfig or jsconfig exists", () => {
   const source = fixtureSource();
   source.files = source.files.filter((file) => file.path !== "tsconfig.json");
-  assert.throws(() => buildBaselineGraph(source), /tsconfig.json is required/);
+  const graph = buildBaselineGraph(source);
+  assert.equal(graph.files.length, 5);
+  assert.equal(graph.projects?.[0]?.configPath, null);
 });

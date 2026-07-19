@@ -70,6 +70,12 @@ export const graphSnapshotTable = pgTable(
     fallbackReason: text("fallback_reason"),
     // Number of analyzed code and style files successfully stored in this snapshot.
     fileCount: integer("file_count").notNull().default(0),
+    // Number of discovered JS/TS projects/packages represented by this repository snapshot.
+    projectCount: integer("project_count").notNull().default(0),
+    // Number of verified framework entrypoints (pages and HTTP handlers).
+    entrypointCount: integer("entrypoint_count").notNull().default(0),
+    // Number of verified protocol bindings such as a tRPC client call to a procedure.
+    protocolBindingCount: integer("protocol_binding_count").notNull().default(0),
     // Number of top-level function, class, variable, or component symbols stored in this snapshot.
     symbolCount: integer("symbol_count").notNull().default(0),
     // Number of directed import relationships stored in this snapshot.
@@ -93,6 +99,27 @@ export const graphSnapshotTable = pgTable(
   ],
 );
 
+// Stable repository-local project/package identity. A project is selected by
+// its deepest repository-relative root, not by an inferred framework route.
+export const graphProjectTable = pgTable(
+  "graph_project",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    repoId: bigint("repo_id", { mode: "number" }).notNull().references(() => repoConfigTable.repoId),
+    rootPath: text("root_path").notNull(),
+    packageName: text("package_name"),
+    packageType: text("package_type").notNull(),
+    configPath: text("config_path"),
+    primaryFramework: text("primary_framework").notNull(),
+    protocolProfiles: jsonb("protocol_profiles").$type<string[]>().notNull().default([]),
+    status: text("status").notNull(),
+    reason: text("reason"),
+    isActive: boolean("is_active").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("graph_project_repo_root_unique").on(table.repoId, table.rootPath)],
+);
+
 // Current mutable source-file facts for a repository branch.
 export const graphFileTable = pgTable(
   "graph_file",
@@ -103,6 +130,9 @@ export const graphFileTable = pgTable(
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => graphSnapshotTable.id),
+    // Project/package that owns this path in a monorepo. Cross-project imports
+    // remain normal import rows pointing to another graph_file.
+    projectId: bigint("project_id", { mode: "number" }).notNull().references(() => graphProjectTable.id),
     // Repository-relative source path, for example src/app/checkout/page.tsx.
     path: text("path").notNull(),
     // Git blob SHA proving the exact file content observed during this snapshot build.
@@ -118,6 +148,49 @@ export const graphFileTable = pgTable(
   (table) => [
     // A repository path can appear only once in the current materialized graph.
     uniqueIndex("graph_file_snapshot_path_unique").on(table.snapshotId, table.path),
+  ],
+);
+
+// Framework-proven user-facing routes and server handlers. These facts are
+// separate from graph_file because generic source files do not imply routes.
+export const graphEntrypointTable = pgTable(
+  "graph_entrypoint",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    snapshotId: uuid("snapshot_id").notNull().references(() => graphSnapshotTable.id),
+    projectId: bigint("project_id", { mode: "number" }).notNull().references(() => graphProjectTable.id),
+    fileId: bigint("file_id", { mode: "number" }).notNull().references(() => graphFileTable.id),
+    kind: text("kind").notNull(),
+    routePath: text("route_path").notNull(),
+    httpMethod: text("http_method"),
+    startLine: integer("start_line").notNull(),
+    startColumn: integer("start_column").notNull(),
+    reason: text("reason").notNull(),
+  },
+  (table) => [
+    uniqueIndex("graph_entrypoint_snapshot_identity_unique").on(table.snapshotId, table.projectId, table.kind, table.routePath, table.httpMethod),
+    index("graph_entrypoint_snapshot_file_idx").on(table.snapshotId, table.fileId),
+  ],
+);
+
+// Verified source-level protocol links. The initial supported protocol is tRPC;
+// keeping it separate prevents protocol claims from masquerading as imports.
+export const graphProtocolBindingTable = pgTable(
+  "graph_protocol_binding",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    snapshotId: uuid("snapshot_id").notNull().references(() => graphSnapshotTable.id),
+    protocol: text("protocol").notNull(),
+    callerFileId: bigint("caller_file_id", { mode: "number" }).notNull().references(() => graphFileTable.id),
+    handlerFileId: bigint("handler_file_id", { mode: "number" }).notNull().references(() => graphFileTable.id),
+    operation: text("operation").notNull(),
+    startLine: integer("start_line").notNull(),
+    startColumn: integer("start_column").notNull(),
+    reason: text("reason").notNull(),
+  },
+  (table) => [
+    uniqueIndex("graph_protocol_binding_snapshot_identity_unique").on(table.snapshotId, table.callerFileId, table.handlerFileId, table.operation),
+    index("graph_protocol_binding_snapshot_handler_idx").on(table.snapshotId, table.handlerFileId),
   ],
 );
 

@@ -7,6 +7,10 @@ export interface ImpactAssessmentItem {
   /** A user-facing graph entrypoint. Only pages and API routes are candidates. */
   path: string;
   kind: Extract<ProductImpactKind, "page" | "api_route">;
+  projectRoot?: string;
+  routePath?: string;
+  httpMethod?: string | null;
+  entrypointReason?: string;
   tier: ImpactTier;
   changedSeedPath: string;
   technicalRole: TechnicalRole;
@@ -55,16 +59,21 @@ export function assessImpact(
     const candidate: ImpactAssessmentItem = {
       path: item.path,
       kind: item.kind,
+      projectRoot: item.projectRoot,
+      routePath: item.routePath,
+      httpMethod: item.httpMethod,
+      entrypointReason: item.entrypointReason,
       tier,
       changedSeedPath,
       technicalRole,
       technicalRoleReason,
       impact: item.impact,
       dependencyPath: item.dependencyPath,
-      reason: policyReason(tier, technicalRole, changedSeedPath, item.path, item.dependencyPath),
+      reason: policyReason(tier, technicalRole, changedSeedPath, item.routePath ?? item.path, item.dependencyPath),
     };
-    const current = candidates.get(item.path);
-    if (!current || compareCandidates(candidate, current) < 0) candidates.set(item.path, candidate);
+    const key = [item.projectRoot ?? "", item.kind, item.httpMethod ?? "", item.routePath ?? item.path].join("\u0000");
+    const current = candidates.get(key);
+    if (!current || compareCandidates(candidate, current) < 0) candidates.set(key, candidate);
   }
 
   return {
@@ -94,6 +103,8 @@ function compareCandidates(left: ImpactAssessmentItem, right: ImpactAssessmentIt
   return tierRank[left.tier] - tierRank[right.tier]
     || Number(right.impact === "direct") - Number(left.impact === "direct")
     || left.dependencyPath.length - right.dependencyPath.length
+    || (left.projectRoot ?? "").localeCompare(right.projectRoot ?? "")
+    || (left.routePath ?? left.path).localeCompare(right.routePath ?? right.path)
     || left.path.localeCompare(right.path)
     || left.dependencyPath.join("\u0000").localeCompare(right.dependencyPath.join("\u0000"));
 }

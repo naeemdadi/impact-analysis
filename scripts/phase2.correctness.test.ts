@@ -25,12 +25,12 @@ function fixtureSource(): RepositorySource {
 test("models JavaScript, styles, local assets, exports, and framework roles deterministically", () => {
   const graph = buildBaselineGraph(fixtureSource());
   const kind = (path: string) => graph.files.find((file) => file.path === path)?.kind;
-  assert.equal(kind("src/env.js"), "shared_module");
+  assert.equal(kind("src/env.js"), "module");
   assert.equal(kind("src/styles/globals.css"), "style");
-  assert.equal(kind("src/app/layout.tsx"), "layout");
-  assert.equal(kind("src/app/loading.tsx"), "loading");
-  assert.equal(kind("src/app/error.tsx"), "error_boundary");
-  assert.equal(kind("src/app/robots.ts"), "metadata");
+  assert.equal(kind("src/app/layout.tsx"), "component");
+  assert.equal(kind("src/app/loading.tsx"), "component");
+  assert.equal(kind("src/app/error.tsx"), "component");
+  assert.equal(kind("src/app/robots.ts"), "module");
   assert.equal(kind("src/components/ui/button.tsx"), "component");
   assert.equal(kind("scripts/setup.ts"), "tooling");
   assert.equal(graph.symbols.find((symbol) => symbol.name === "Button")?.isExported, true);

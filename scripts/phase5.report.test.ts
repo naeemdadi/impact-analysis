@@ -57,7 +57,7 @@ test("report renders cited source-grounded scenarios without visible file paths"
   assert.match(report, /Route: \/checkout/);
   assert.match(report, /\*\*Setup:\*\*/);
   assert.match(report, /\*\*Do:\*\*/);
-  assert.match(report, /\*\*Expected:\*\*/);
+  assert.match(report, /\*\*Expected Outcome:\*\*/);
   assert.match(report, /\*\*Why:\*\* This page imports the modified `price`/);
   assert.match(report, /https:\/\/github\.com\/acme\/shop\/blob\/head\/src\/lib\/price\.ts#L1-L2/);
   assert.doesNotMatch(report, /in `src\//);

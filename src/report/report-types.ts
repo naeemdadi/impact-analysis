@@ -119,7 +119,7 @@ export interface ReportEvidence {
   unresolvedImportCount: number;
   changedFiles: DeterministicPrAnalysis["changedFiles"];
   changedSymbols: Array<{ id: string; name: string; changeKind: string; filePath: string }>;
-  affectedItems: Array<{ id: string; path: string; kind: ProductImpactKind; impact: "direct" | "indirect"; dependencyPath: string[] }>;
+  affectedItems: Array<{ id: string; path: string; kind: ProductImpactKind; projectRoot?: string; routePath?: string; httpMethod?: string | null; impact: "direct" | "indirect"; dependencyPath: string[] }>;
   impactAssessment: ImpactAssessment;
 }
 

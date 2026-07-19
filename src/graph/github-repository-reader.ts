@@ -1,10 +1,9 @@
 import { App } from "@octokit/app";
 import { readFile } from "node:fs/promises";
 
+import { isGraphConfigurationPath, isGraphSourcePath } from "./project-discovery.js";
 import type { CommitComparison, RepositoryReader, RepositorySource, RepositoryTreeEntry, SourceFile } from "./types.js";
 
-const analyzablePathPattern = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|scss|sass|less)$/;
-const configPathPattern = /(^|\/)tsconfig(?:\.[^/]+)?\.json$/;
 
 function requireEnvironment(name: string): string {
   const value = process.env[name];
@@ -75,7 +74,7 @@ export class GitHubRepositoryReader implements RepositoryReader {
     const entries = await this.fetchTree(input);
     const files = await this.fetchFiles({
       ...input,
-      paths: entries.filter((entry) => analyzablePathPattern.test(entry.path) || configPathPattern.test(entry.path)).map((entry) => entry.path),
+      paths: entries.filter((entry) => isGraphSourcePath(entry.path) || isGraphConfigurationPath(entry.path)).map((entry) => entry.path),
     });
     return {
       repoId: input.repoId,
