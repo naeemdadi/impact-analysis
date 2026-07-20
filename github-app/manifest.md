@@ -2,7 +2,7 @@
 
 ## App Identity
 
-- Name: `Impact Analysis`
+- Name: `PR Impact Analysis`
 - Homepage URL: public project or demo page
 - Webhook URL: `<service-base-url>/webhooks/github`
 

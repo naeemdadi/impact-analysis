@@ -47,7 +47,7 @@ const scenario = {
   anchorIds: ["anchor:1:2", "anchor:1:3"],
 };
 
-test("report renders cited source-grounded scenarios without visible file paths", () => {
+test("report renders source-grounded scenarios without visible file paths or source lists", () => {
   const evidence = buildReportEvidence(analysis(), assessment);
   const semantic = validateSemanticResult({ changeSummaries: [{ hunkIds: ["hunk:1"], summary: "Updates the checkout total shown to customers." }], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [scenario] }] }, semanticInput);
   const report = renderReport(evidence, semantic, { status: "completed", notice: null }, semanticInput);
@@ -59,10 +59,65 @@ test("report renders cited source-grounded scenarios without visible file paths"
   assert.match(report, /\*\*Do:\*\*/);
   assert.match(report, /\*\*Expected Outcome:\*\*/);
   assert.match(report, /\*\*Why:\*\* This page imports the modified `price`/);
-  assert.match(report, /https:\/\/github\.com\/acme\/shop\/blob\/head\/src\/lib\/price\.ts#L1-L2/);
   assert.doesNotMatch(report, /in `src\//);
   assert.doesNotMatch(report, /All resolved dependency paths|Review the user-visible behavior/);
+  assert.doesNotMatch(report, /^### Technical impact$/m);
+  assert.doesNotMatch(report, /^### Changed source$/m);
+  assert.match(report, /^### Impact map$/m);
+  assert.doesNotMatch(report, /<details>/);
   assert.match(report, /```mermaid/);
+});
+
+test("technical-only reachability stays inside collapsed evidence", () => {
+  const technicalAssessment: ImpactAssessment = {
+    ...assessment,
+    items: [
+      ...assessment.items,
+      {
+        path: "src/app/analytics/page.tsx",
+        kind: "page",
+        tier: "technical_only",
+        changedSeedPath: "src/lib/price.ts",
+        technicalRole: "analytics",
+        technicalRoleReason: "fixture",
+        impact: "indirect",
+        dependencyPath: ["src/lib/price.ts", "src/app/analytics/page.tsx"],
+        reason: "Technical-only fixture.",
+      },
+    ],
+  };
+  const report = renderReport(buildReportEvidence(analysis(), technicalAssessment), null, { status: "not_requested", notice: null }, semanticInput);
+  assert.doesNotMatch(report, /^### Technical impact$/m);
+  assert.doesNotMatch(report, /^### Changed source$/m);
+  assert.match(report, /^### Impact map$/m);
+  assert.doesNotMatch(report, /<details>/);
+  assert.match(report, /Dashed gray = technical-only reachability/);
+});
+
+test("report discloses prioritized entrypoints that were not expanded into scenarios", () => {
+  const expandedAssessment: ImpactAssessment = {
+    ...assessment,
+    items: [
+      ...assessment.items,
+      {
+        path: "src/app/refunds/page.tsx",
+        kind: "page",
+        tier: "primary",
+        changedSeedPath: "src/lib/price.ts",
+        technicalRole: "application",
+        technicalRoleReason: "fixture",
+        impact: "indirect",
+        dependencyPath: ["src/lib/price.ts", "src/app/refunds/page.tsx"],
+        reason: "Primary fixture.",
+      },
+    ],
+  };
+  const semantic = validateSemanticResult({
+    changeSummaries: [],
+    verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [scenario] }],
+  }, semanticInput);
+  const report = renderReport(buildReportEvidence(analysis(), expandedAssessment), semantic, { status: "completed", notice: null }, semanticInput);
+  assert.match(report, /1 additional prioritized entrypoint was not expanded into scenarios/);
 });
 
 test("semantic output cannot add routes, unknown anchors, or uncited behavior", () => {
@@ -181,6 +236,59 @@ test("semantic context prioritizes route seeds and extracts AST and test anchors
   assert.ok(anchors.every((anchor) => anchor.excerpt.length <= 1_600));
 });
 
+test("semantic context backfills past an ungrounded route candidate", async () => {
+  const base: SourceFile[] = [
+    { path: "src/lib/first.ts", blobSha: "base-first", content: "export function first() {\n  return 'old';\n}\n" },
+    { path: "src/lib/price.ts", blobSha: "base-price", content: "export function price() {\n  return 10;\n}\n" },
+  ];
+  const head: SourceFile[] = [
+    { path: "src/lib/first.ts", blobSha: "head-first", content: "export function first() {\n  return 'new';\n}\n" },
+    { path: "src/lib/price.ts", blobSha: "head-price", content: "export function price() {\n  return 12;\n}\n" },
+    { path: "src/app/no-anchor/page.tsx", blobSha: "no-anchor", content: "import { first } from '@/lib/first';\nexport default function NoAnchor() {\n  return <main>{first()}</main>;\n}\n" },
+    { path: "src/app/checkout/page.tsx", blobSha: "checkout", content: "import { price } from '@/lib/price';\nexport default function Checkout() {\n  return <button>Pay {price()}</button>;\n}\n" },
+  ];
+  const bySha = new Map([["base", base], ["head", head]]);
+  const reader: RepositoryReader = {
+    resolveRepository: async () => ({ owner: "acme", name: "shop", defaultBranch: "main" }),
+    resolveBranchSha: async () => "head",
+    fetchSource: async () => { throw new Error("not used"); },
+    fetchTree: async () => head.map((file) => ({ path: file.path, blobSha: file.blobSha })),
+    fetchFiles: async ({ sha, paths }) => (bySha.get(sha) ?? []).filter((file) => paths.includes(file.path)),
+    compareCommits: async () => ({ comparable: true, reason: null, changes: [] }),
+  };
+  const contextAssessment: ImpactAssessment = {
+    ...assessment,
+    items: [
+      {
+        path: "src/app/no-anchor/page.tsx",
+        kind: "page",
+        tier: "primary",
+        changedSeedPath: "src/lib/first.ts",
+        technicalRole: "application",
+        technicalRoleReason: "fixture",
+        impact: "indirect",
+        dependencyPath: ["src/lib/first.ts", "src/app/no-anchor/page.tsx"],
+        reason: "Primary fixture.",
+      },
+      assessment.items[0]!,
+    ],
+  };
+  const input = await buildPrSemanticContext(
+    {
+      ...analysis(),
+      changedFiles: [
+        { path: "src/lib/first.ts", status: "modified", graphRelevant: true },
+        { path: "src/lib/price.ts", status: "modified", graphRelevant: true },
+      ],
+    },
+    contextAssessment,
+    reader,
+    { config: { repoId: 1, installationId: 1, owner: "acme", name: "shop", trackedBranch: "main", aiAssistanceEnabled: true } },
+  );
+  assert.deepEqual(input.targets.map((target) => target.path), ["src/app/checkout/page.tsx"]);
+  assert.ok(input.changedHunks.some((hunk) => hunk.path === "src/lib/price.ts"));
+});
+
 test("strict provider schema uses only the supported subset; local validation keeps bounds", () => {
   const schema = JSON.stringify(semanticJsonSchema(["entry:src/app/checkout/page.tsx"]));
   assert.doesNotMatch(schema, /minLength|maxLength|minItems|maxItems/);
@@ -205,7 +313,7 @@ test("AI fallback does not fabricate generic verification work", () => {
   const report = renderReport(evidence, null, { status: "fallback", notice: "OpenAI authentication failed." }, semanticInput);
   assert.match(report, /AI-assisted guidance unavailable/);
   assert.doesNotMatch(report, /What to verify before merging|Review the user-visible behavior/);
-  assert.match(report, /Affected routes without a source-grounded scenario/);
+  assert.doesNotMatch(report, /Affected routes without a source-grounded scenario/);
 });
 
 test("insufficient evidence remains non-claiming", () => {

@@ -1,7 +1,7 @@
 {
   "name": "impact-analysis",
   "version": "1.0.0",
-  "description": "Evidence-backed GitHub App for pull request impact analysis",
+  "description": "Evidence-backed GitHub App for PR impact analysis",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server/index.ts",

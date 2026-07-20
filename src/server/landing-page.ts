@@ -15,7 +15,7 @@ export function renderLandingPage(): string {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Evidence-backed pull request verification guidance for GitHub." />
     <meta name="theme-color" content="#080b13" />
-    <title>Impact Analysis — Know what to verify before merging</title>
+    <title>PR Impact Analysis — Know what to verify before merging</title>
     <style>
       :root {
         color-scheme: dark;
@@ -176,9 +176,9 @@ export function renderLandingPage(): string {
     <div class="topline"><div class="shell">Built for developers who need evidence before they merge.</div></div>
     <header>
       <nav class="shell" aria-label="Primary navigation">
-        <a class="brand" href="#top" aria-label="Impact Analysis home">
+        <a class="brand" href="#top" aria-label="PR Impact Analysis home">
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="12" cy="18" r="2"/><path d="m6.8 7.1 3.7 9M17.1 6.6 13.8 16M7 6.2l10-.8"/></svg></span>
-          Impact Analysis
+          PR Impact Analysis
         </a>
         <div class="nav-links">
           <a href="#how-it-works">How it works</a>
@@ -194,7 +194,7 @@ export function renderLandingPage(): string {
           <div>
             <p class="eyebrow">Evidence-backed PR guidance</p>
             <h1 id="hero-heading">Know what to <span class="gradient-text">verify</span> before merging.</h1>
-            <p class="lede">Impact Analysis traces pull-request changes through your codebase, identifies the routes that can truly be reached, and posts practical verification guidance directly on the PR.</p>
+            <p class="lede">PR Impact Analysis traces pull-request changes through your codebase, identifies the routes that can truly be reached, and posts practical verification guidance directly on the PR.</p>
             <div class="hero-actions">
               <a class="button button-primary" href="#reports">See real reports <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
               <a class="button button-secondary" href="${ARCHITECTURE_URL}" target="_blank" rel="noopener noreferrer">Explore the architecture ↗</a>
@@ -202,9 +202,9 @@ export function renderLandingPage(): string {
             <p class="proof"><span><b class="check">✓</b> Deterministic graph evidence</span><span><b class="check">✓</b> GPT-5.6, bounded by source citations</span></p>
           </div>
 
-          <a class="report-window" href="/images/PR-1.png" target="_blank" rel="noopener noreferrer" aria-label="Open a full-size example Impact Analysis pull request report">
+          <a class="report-window" href="/images/PR-1.png" target="_blank" rel="noopener noreferrer" aria-label="Open a full-size example PR Impact Analysis pull request report">
             <div class="window-bar" aria-hidden="true"><span class="window-dots"><i></i><i></i><i></i></span><span class="window-pill">github.com · pull request</span></div>
-            <img src="/images/PR-1.png" alt="An Impact Analysis pull request report showing changes, verification guidance, and technical evidence." />
+            <img src="/images/PR-1.png" alt="A PR Impact Analysis pull request report showing changes, verification guidance, and technical evidence." />
             <span class="report-label">A real sticky PR comment ↗</span>
           </a>
         </section>
@@ -219,7 +219,7 @@ export function renderLandingPage(): string {
           <div class="section-intro">
             <p class="section-tag">How it works</p>
             <h2 id="how-heading">A verification plan with a chain of evidence.</h2>
-            <p>Impact Analysis combines deterministic graph analysis with carefully bounded GPT-5.6 interpretation. Each layer has one job, so developers can inspect why a recommendation appears.</p>
+            <p>PR Impact Analysis combines deterministic graph analysis with carefully bounded GPT-5.6 interpretation. Each layer has one job, so developers can inspect why a recommendation appears.</p>
           </div>
           <div class="steps">
             <article class="step"><span class="step-number">01</span><h3>Read the PR</h3><p>Exact changed files, symbols, and line-level hunks are gathered from the base and head commits.</p></article>
@@ -268,9 +268,9 @@ export function renderLandingPage(): string {
 
         <section class="demo" aria-labelledby="demo-heading">
           <div>
-            <p class="section-tag">OpenAI Build Week · Developer Tools</p>
+            <p class="section-tag">Evidence-first PR review</p>
             <h2 id="demo-heading">A dependable second set of eyes before merge.</h2>
-            <p>Built with Codex and GPT-5.6. Codex accelerated the graph, GitHub, reliability, test, and report pipeline; GPT-5.6 turns only bounded, cited PR context into human-readable verification guidance.</p>
+            <p>PR Impact Analysis combines deterministic graph evidence with GPT-5.6 guidance. The model receives only bounded, cited PR context and cannot establish impact on its own.</p>
             <div class="demo-actions">
               <a class="button button-primary" href="${README_URL}" target="_blank" rel="noopener noreferrer">Read the README &amp; setup guide ↗</a>
               <a class="button button-secondary" href="${ARCHITECTURE_URL}" target="_blank" rel="noopener noreferrer">Read architecture docs ↗</a>
@@ -283,7 +283,7 @@ export function renderLandingPage(): string {
 
     <footer>
       <div class="shell footer-row">
-        <span>Impact Analysis · Evidence-backed PR verification</span>
+        <span>PR Impact Analysis · Evidence-backed PR verification</span>
         <div class="footer-links"><a href="${README_URL}" target="_blank" rel="noopener noreferrer">README &amp; setup</a><a href="${ARCHITECTURE_URL}" target="_blank" rel="noopener noreferrer">Architecture</a><a href="${REPOSITORY_URL}" target="_blank" rel="noopener noreferrer">GitHub</a><a href="/health">Health</a></div>
       </div>
     </footer>

@@ -1,5 +1,5 @@
 import type { ImpactAssessmentItem } from "../impact/impact-assessment.js";
-import type { PrSemanticInput, PrSemanticResult, ReportEvidence, SemanticGuidanceState, SourceContextItem, SourceRevision } from "./report-types.js";
+import type { PrSemanticInput, PrSemanticResult, ReportEvidence, SemanticGuidanceState } from "./report-types.js";
 
 const maxImpactMapEntrypoints = 8;
 const maxImpactMapNodes = 24;
@@ -41,14 +41,14 @@ export function renderReport(
     }
   }
 
-  const technical = evidence.impactAssessment.items.filter((item) => item.tier === "technical_only");
-  if (technical.length) {
-    lines.push("### Technical impact", "", ...technical.map((item) => `- ${technicalReason(item)}`), "");
-  }
-  const evidenceOnly = evidence.impactAssessment.items.filter((item) => item.tier === "evidence_only");
-  if (evidenceOnly.length) lines.push("### Evidence requiring manual review", "", ...evidenceOnly.map((item) => `- ${displayEntrypoint(item)} has verified reachability, but the changed code has no reliable technical classification.`), "");
-
-  lines.push(...renderTechnicalEvidence(evidence, semanticInput, prioritized.filter((item) => !scenarioTargets.includes(item))), "", footer(evidence));
+  lines.push(...renderImpactMapSection(evidence));
+  const selectedSemanticTargetIds = new Set(semanticInput?.targets.map((target) => target.id) ?? []);
+  const semanticCompleted = guidance.status === "completed" && semanticInput?.enabled;
+  const unavailable = semanticCompleted ? prioritized.filter((item) => selectedSemanticTargetIds.has(targetIdFor(item)) && !scenarioTargets.includes(item)) : [];
+  const notExpanded = semanticCompleted ? prioritized.filter((item) => !selectedSemanticTargetIds.has(targetIdFor(item))) : [];
+  const analysisDetails = renderAnalysisDetails(evidence, unavailable, notExpanded);
+  if (analysisDetails.length) lines.push(...analysisDetails);
+  lines.push("", footer(evidence));
   return lines.join("\n");
 }
 
@@ -87,19 +87,9 @@ function changedSourceLabel(item: ImpactAssessmentItem, evidence: ReportEvidence
   return symbol ? formatSymbolName(symbol.name) : friendlyPathLabel(item.changedSeedPath);
 }
 
-function technicalReason(item: ImpactAssessmentItem): string {
-  return `${capitalize(item.technicalRole)} change is technically connected to ${displayEntrypoint(item)}; it is retained as evidence rather than promoted to a customer-flow check.`;
-}
-
-/** Keeps audit data accessible without turning every PR comment into a path dump. */
-function renderTechnicalEvidence(evidence: ReportEvidence, input: PrSemanticInput | undefined, unavailable: ImpactAssessmentItem[]): string[] {
-  const affectedCount = evidence.affectedItems.length;
-  const noun = affectedCount === 1 ? "affected file" : "affected files";
-  const lines = [
-    "<details>",
-    "",
-    `<summary>Technical evidence · ${affectedCount} ${noun} · ${evidence.unresolvedImportCount} unresolved import(s)</summary>`,
-    "",
+/** The graph is visible because it is the report's compact, auditable proof of reachability. */
+function renderImpactMapSection(evidence: ReportEvidence): string[] {
+  return [
     "### Impact map",
     "",
     "```mermaid",
@@ -108,35 +98,24 @@ function renderTechnicalEvidence(evidence: ReportEvidence, input: PrSemanticInpu
     "",
     "Red = changed source · Blue = affected route/API · Dashed gray = technical-only reachability.",
   ];
-  if (evidence.changedSymbols.length) {
-    lines.push("", "### Changed source");
-    for (const symbol of evidence.changedSymbols) lines.push(`- ${symbol.changeKind}: ${sourceReference(symbol.name, symbol.filePath, input, evidence)}`);
-  }
+}
+
+/** Keeps only genuine analysis limitations collapsed, not the report's main evidence visual. */
+function renderAnalysisDetails(evidence: ReportEvidence, unavailable: ImpactAssessmentItem[], notExpanded: ImpactAssessmentItem[]): string[] {
+  if (!unavailable.length && !notExpanded.length && evidence.unresolvedImportCount === 0) return [];
+  const lines = ["", "<details>", "", "<summary>Analysis details</summary>"];
   if (unavailable.length) {
     lines.push("", "### Affected routes without a source-grounded scenario");
     for (const item of unavailable) lines.push(`- ${displayEntrypoint(item)} — the available source did not contain a supported user interaction, state, or contract anchor.`);
   }
-  lines.push("", `- ${evidence.unresolvedImportCount} unresolved import(s)`, "", "</details>");
+  if (notExpanded.length) {
+    const noun = notExpanded.length === 1 ? "entrypoint" : "entrypoints";
+    const verb = notExpanded.length === 1 ? "was" : "were";
+    lines.push("", `- ${notExpanded.length} additional prioritized ${noun} ${verb} not expanded into scenarios. The report expands at most five source-grounded targets; their deterministic reachability remains recorded.`);
+  }
+  if (evidence.unresolvedImportCount > 0) lines.push("", `- ${evidence.unresolvedImportCount} unresolved import(s)`);
+  lines.push("", "</details>");
   return lines;
-}
-
-function sourceReference(name: string, filePath: string, input: PrSemanticInput | undefined, evidence: ReportEvidence): string {
-  const label = `\`${name}\``;
-  const anchor = input?.targets.flatMap((target) => target.anchors).find((candidate) => candidate.path === filePath && candidate.kind === "changed_declaration");
-  const hunk = input?.changedHunks.find((candidate) => candidate.path === filePath);
-  const reference = input?.sourceReferences.find((candidate) => candidate.path === filePath && (candidate.symbolName === name || candidate.symbolName === null));
-  const revision = anchor?.revision ?? hunk?.revision ?? reference?.revision;
-  const startLine = anchor?.startLine ?? (revision === "base" ? hunk?.beforeStartLine : hunk?.afterStartLine) ?? reference?.startLine;
-  const endLine = anchor?.endLine ?? (revision === "base" ? hunk?.beforeEndLine : hunk?.afterEndLine) ?? reference?.endLine;
-  const url = sourceUrl(input, filePath, revision, startLine, endLine, evidence);
-  return url ? `[${label} ↗](${url})` : label;
-}
-
-function sourceUrl(input: PrSemanticInput | undefined, filePath: string, revision: SourceRevision | undefined, startLine: number | undefined, endLine: number | undefined, evidence: ReportEvidence): string | null {
-  if (!input?.repository || !revision || !startLine || !endLine) return null;
-  const sha = revision === "base" ? evidence.baseSha : evidence.headSha;
-  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-  return `https://github.com/${encodeURIComponent(input.repository.owner)}/${encodeURIComponent(input.repository.name)}/blob/${sha}/${encodedPath}#L${startLine}-L${endLine}`;
 }
 
 function renderImpactMap(evidence: ReportEvidence): string[] {

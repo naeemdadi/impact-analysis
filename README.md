@@ -1,21 +1,18 @@
-# Impact Analysis
+# PR Impact Analysis
 
 > **Know what to verify before merging.**
 
-Impact Analysis is an evidence-first GitHub App for pull-request review. It
+PR Impact Analysis is an evidence-first GitHub App for pull-request review. It
 traces a PR through a JavaScript/TypeScript dependency graph, identifies the
 routes and APIs that can be reached, and posts one sticky GitHub comment with
 prioritized, source-grounded verification guidance.
-
-It is built for the **OpenAI Build Week — Developer Tools** track with Codex
-and GPT-5.6.
 
 [Live landing page](https://impact-analysis-yiyj.onrender.com) ·
 [Architecture](docs/ARCHITECTURE.md) ·
 [GitHub App setup](github-app/manifest.md)
 
 <p align="center">
-  <a href="images/PR-2.png"><img src="images/PR-2.png" width="480" alt="An Impact Analysis sticky pull request comment with change summary, verification guidance, and collapsed technical evidence." /></a>
+  <a href="images/PR-2.png"><img src="images/PR-2.png" width="480" alt="A PR Impact Analysis sticky pull request comment with change summary, verification guidance, and collapsed technical evidence." /></a>
 </p>
 
 ## The problem
@@ -25,7 +22,7 @@ Neither tells a reviewer which product behavior deserves manual verification
 before merge.
 
 For a shared component, helper, analytics hook, or API procedure, a long list
-of importers is technically correct but rarely useful. Impact Analysis answers
+of importers is technically correct but rarely useful. PR Impact Analysis answers
 the more practical question:
 
 > **Given this change, what should a developer check before merging—and why?**
@@ -51,6 +48,12 @@ The graph is the authority for reachability. GPT-5.6 can explain only the
 bounded PR code context it is given; it cannot add routes, invent dependencies,
 claim that a regression exists, or replace CI.
 
+To keep comments useful, the report expands at most five source-grounded
+Primary/Secondary entrypoints, with up to two scenarios each. They are ordered
+deterministically: Primary before Secondary, direct before indirect, then by
+shorter resolved path and stable project/route order. Additional prioritized
+entrypoints are disclosed in Analysis details rather than silently dropped.
+
 ### What a developer sees
 
 - **What changed** — concise summaries grounded in exact changed hunks.
@@ -58,52 +61,78 @@ claim that a regression exists, or replace CI.
   changes that reach product entrypoints.
 - **Secondary verification** — presentation or utility changes that reach an
   entrypoint.
-- **Technical impact** — analytics, styling, infrastructure, configuration,
-  tests, and reusable UI primitives; preserved as evidence without asking
-  developers to retest every product flow.
+- **Impact map** — a compact visible graph of changed source, affected
+  routes/APIs, and muted technical-only reachability. Genuine analysis limits
+  stay collapsed so they do not compete with verification guidance.
 - **Expandable impact map** — an auditable graph rather than a wall of paths.
 
 ## Why it is different
 
-| Typical PR summary | Impact Analysis |
+| Typical PR summary | PR Impact Analysis |
 |---|---|
 | Explains a diff | Connects a change to statically proven routes and APIs |
 | May imply impact from semantic context | Uses resolved imports as the reachability authority |
 | Treats every importer alike | Applies a deterministic role policy to reduce shared-code noise |
 | Produces a new review artifact | Updates one sticky comment on the existing pull request |
 
-Impact Analysis does **not** claim to find bugs, prove runtime behavior,
+PR Impact Analysis does **not** claim to find bugs, prove runtime behavior,
 replace tests, perform a code-quality review, or infer user workflows that are
 not supported by the supplied source evidence.
 
 ## Built with Codex and GPT-5.6
 
-Codex was the primary engineering collaborator for the project: it accelerated
-the system architecture, repository graph engine, framework adapters, durable
-queue reliability, GitHub integration, report safety rules, tests, deployment
-documentation, and the landing page.
+PR Impact Analysis was developed through an iterative collaboration with Codex.
+The project author set the product direction, reviewed trade-offs, and decided
+what counted as an acceptable result; Codex accelerated the architecture,
+implementation, debugging, testing, and documentation work needed to turn
+those decisions into a working GitHub App.
 
-The product uses GPT-5.6 through the OpenAI Responses API after deterministic
+### Where Codex accelerated the workflow
+
+- Turned a phased product discussion into the webhook, durable-queue, graph,
+  PR-analysis, report, and sticky-comment pipeline.
+- Helped design and implement the JavaScript/TypeScript graph engine,
+  workspace discovery, and framework adapters for Next.js, React Router,
+  Remix, Express, and tRPC.
+- Iterated on real report output: reducing dependency noise, separating
+  reachability from semantic explanation, improving source-grounded
+  verification scenarios, and making the impact map auditable.
+- Added reliability work around idempotency, job leases, reconciliation,
+  retries, bounded AI requests, validation, and deployment documentation.
+
+### Key decisions made during collaboration
+
+| Decision | Result in the product |
+|---|---|
+| Deterministic analysis establishes reachability | Resolved imports, routes, APIs, and protocol bindings are evidence—not LLM guesses. |
+| GPT-5.6 is PR-scoped and bounded | It receives selected changed hunks and graph-proven route context, never a whole repository. |
+| Technical roles prioritize review attention | Shared UI, styling, analytics, configuration, and infrastructure stay visible as technical evidence without triggering broad user-flow checks. |
+| Reports optimize for manual product verification | The sticky comment leads with source-grounded scenarios and keeps detailed graph evidence available for inspection. |
+| One service is sufficient for the current deployment | Express and durable workers run together against PostgreSQL, keeping the demo and local operation simple. |
+
+### How GPT-5.6 contributes at runtime
+
+After deterministic PR analysis identifies the routes or APIs that can be
+reached, GPT-5.6 uses the OpenAI Responses API to summarize the supplied change
+and phrase suggested user-facing verification scenarios. Its structured output
+must cite supplied hunk and source-context IDs; local validation rejects
+unknown targets, unsupported claims, duplicate scenarios, and CI-oriented
+checks. The renderer then combines only validated AI wording with deterministic
+graph evidence in the GitHub comment.
+
+## AI assistance
+
+PR Impact Analysis uses GPT-5.6 through the OpenAI Responses API after deterministic
 analysis has completed. A single PR-scoped request receives only selected
 changed hunks and exact route context. Strict structured output and local
 validation ensure that the model can summarize supplied changes and phrase
 verification checks, but can never establish reachability itself.
 
-For the Devpost submission, include the required Codex `/feedback` session ID
-and a public, narrated demonstration video showing the real end-to-end
-workflow.
-
-## Judge and demo path
+## Try it
 
 The deployed service hosts a product overview and real report examples at
 [impact-analysis-yiyj.onrender.com](https://impact-analysis-yiyj.onrender.com).
 Open either report image to inspect the full sticky-comment output.
-
-The GitHub App is deliberately **private** for the hackathon and installed only
-on controlled demonstration repositories. This prevents arbitrary installations
-from triggering source retrieval or OpenAI usage. In the Devpost submission,
-link the public video and a demonstration PR that show installation, a report
-appearing on a real PR, and the same comment updating after a follow-up commit.
 
 To run your own interactive instance, follow [Local setup](#local-setup),
 create a GitHub App with the documented permissions, and install it on a
@@ -111,7 +140,7 @@ repository you control.
 
 ## Supported repositories
 
-Impact Analysis builds deterministic source graphs for standalone JavaScript
+PR Impact Analysis builds deterministic source graphs for standalone JavaScript
 and TypeScript projects plus npm, Yarn, and pnpm workspaces. Turborepo and Nx
 are recognized as workspace signals. Local workspace packages resolve normally;
 external dependencies are never fetched from `node_modules`.
@@ -242,11 +271,11 @@ not fabricate AI-generated verification scenarios.
 | `pnpm reliability:status` | Show queue, graph, stale-branch, and delivery health. |
 | `pnpm set-ai-assistance -- <repoId> <true|false>` | Change repository-level OpenAI assistance. |
 
-## Deploying the hackathon version
+## Deployment
 
-Impact Analysis deploys as **one always-on Node service plus PostgreSQL**. The
+PR Impact Analysis deploys as **one always-on Node service plus PostgreSQL**. The
 HTTP server and durable workers run together; Postgres also holds queue state,
-so no Redis, SQS, or second worker service is required for the demo.
+so no Redis, SQS, or second worker service is required.
 
 For Render:
 
@@ -260,7 +289,7 @@ Set all production variables as secrets, mount the GitHub private key at the
 path configured by `GITHUB_PRIVATE_KEY_PATH`, and run `pnpm db:migrate` once
 against the fresh production database before accepting webhooks.
 
-Before a demo, verify that:
+Before release, verify that:
 
 - `/health` returns HTTP 200;
 - GitHub delivers supported webhooks with HTTP 202;
@@ -277,8 +306,8 @@ Before a demo, verify that:
   security review.
 - Framework composition not expressed through imports is not inferred.
 - AI never establishes reachability or claims breakage.
-- The embedded-worker deployment is intentionally one replica for the
-  hackathon; web and worker processes should be split before horizontal scale.
+- The embedded-worker deployment is intentionally one replica; web and worker
+  processes should be split before horizontal scale.
 
 ## Documentation
 
@@ -288,7 +317,6 @@ Before a demo, verify that:
   explicit static-analysis limits.
 - [GitHub App manifest](github-app/manifest.md) — permissions, events, and
   setup.
-- [Phase plan](docs/PHASE_PLAN.md) — historical delivery roadmap and scope.
 
 ## License
 

@@ -2,7 +2,7 @@
 
 ## Product contract
 
-Impact Analysis builds a deterministic source graph for indexable JavaScript and TypeScript projects. A project receives user-facing verification recommendations only when a framework/protocol adapter proves its entrypoints and bindings.
+PR Impact Analysis builds a deterministic source graph for indexable JavaScript and TypeScript projects. A project receives user-facing verification recommendations only when a framework/protocol adapter proves its entrypoints and bindings.
 
 ```text
 JS/TS modules and imports

@@ -46,7 +46,10 @@ export async function buildPrSemanticContext(
   if (!config?.aiAssistanceEnabled || analysis.status !== "ready" || !config.owner || !config.name) return disabledInput();
 
   const source: SourceIdentity = { repoId: analysis.repoId, installationId: config.installationId, owner: config.owner, name: config.name, branch: config.trackedBranch };
-  const candidates = assessment.items.filter(isScenarioCandidate).slice(0, maxTargets);
+  // Assessment items are already deterministically ranked. Keep evaluating
+  // them until five targets have enough route-and-behavior evidence; do not let
+  // an ungrounded early candidate silently consume one of the five slots.
+  const candidates = assessment.items.filter(isScenarioCandidate);
   const changed = rankChangedFiles(analysis, candidates).slice(0, maxDiffFiles);
   const [headFiles, baseFiles] = await Promise.all([
     repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths: changed.filter((file) => file.status !== "removed").map((file) => file.path) }),
@@ -60,23 +63,25 @@ export async function buildPrSemanticContext(
     baseByPath.get(change.previousPath ?? change.path),
     headByPath.get(change.path),
   ));
-  const changedHunks = selectHunks(allHunks, candidates).map((hunk, index) => ({ ...hunk, id: `hunk:${index + 1}` }));
+  const candidateHunks = allHunks.map((hunk, index) => ({ ...hunk, id: `candidate-hunk:${index + 1}` }));
   const tests = await findRelatedTests(repositoryReader, source, analysis, candidates);
 
   let remaining = maxTotalCharacters;
   const targets: SemanticEntrypointTarget[] = [];
+  const selectedItems: Array<ImpactAssessmentItem & { tier: "primary" | "secondary" }> = [];
   for (const [index, item] of candidates.entries()) {
+    if (targets.length >= maxTargets) break;
     if (remaining <= 0) break;
-    const targetHunks = changedHunks.filter((hunk) => hunk.path === item.changedSeedPath);
+    const targetHunks = candidateHunks.filter((hunk) => hunk.path === item.changedSeedPath);
     if (!targetHunks.length) continue;
     const paths = uniquePaths([item.path, ...item.dependencyPath.slice(0, -1).reverse(), item.changedSeedPath]).filter(isAllowedSourcePath);
     const files = await repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths });
     const fileByPath = new Map(files.map((file) => [file.path, file]));
     for (const [filePath, file] of headByPath) if (!fileByPath.has(filePath)) fileByPath.set(filePath, file);
     const anchors = buildTargetAnchors(item, targetHunks, fileByPath, tests, index + 1, remaining);
-    const usedCharacters = anchors.reduce((total, anchor) => total + anchor.excerpt.length, 0);
-    remaining -= usedCharacters;
-    if (!anchors.some((anchor) => anchor.kind === "entrypoint")) continue;
+    if (!hasScenarioGrounding(item, anchors)) continue;
+    remaining -= anchors.reduce((total, anchor) => total + anchor.excerpt.length, 0);
+    selectedItems.push(item);
     targets.push({
       id: targetIdFor(item),
       path: item.path,
@@ -88,12 +93,14 @@ export async function buildPrSemanticContext(
       anchors,
     });
   }
+  const changedHunks = selectHunks(allHunks, selectedItems).map((hunk, index) => ({ ...hunk, id: `hunk:${index + 1}` }));
 
   log("info", "PR verification source context prepared", {
     repoId: analysis.repoId,
     pullRequestNumber: analysis.pullRequestNumber,
     headSha: analysis.headSha,
     changedHunkCount: changedHunks.length,
+    prioritizedCandidateCount: candidates.length,
     targetCount: targets.length,
     anchorCounts: countAnchorKinds(targets),
     testAnchorCount: targets.reduce((total, target) => total + target.anchors.filter((anchor) => anchor.kind === "test").length, 0),
@@ -106,6 +113,15 @@ export async function buildPrSemanticContext(
     changedHunks,
     targets,
   };
+}
+
+function hasScenarioGrounding(
+  item: ImpactAssessmentItem & { tier: "primary" | "secondary" },
+  anchors: SourceContextItem[],
+): boolean {
+  if (!anchors.some((anchor) => anchor.kind === "entrypoint")) return false;
+  if (item.kind === "page") return anchors.some((anchor) => anchor.kind === "interaction" || anchor.kind === "state" || anchor.kind === "test");
+  return anchors.some((anchor) => anchor.kind === "api_contract" || anchor.kind === "test");
 }
 
 function disabledInput(): PrSemanticInput {

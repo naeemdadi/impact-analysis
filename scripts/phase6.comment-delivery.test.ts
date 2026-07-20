@@ -7,7 +7,7 @@ const marker = commentMarker(101, 9);
 const identity = { baseSha: "base-sha", headSha: "head-sha" };
 
 test("ready comment preserves persisted report and includes auditable identity", () => {
-  const body = renderPrCommentBody({ marker, analysis: { ...identity, status: "ready" }, markdown: "## Impact Analysis\n\nBefore merging, verify:\n\n- Checkout" });
+  const body = renderPrCommentBody({ marker, analysis: { ...identity, status: "ready" }, markdown: "## PR Impact Analysis\n\nBefore merging, verify:\n\n- Checkout" });
   assert.match(body, /Before merging, verify/);
   assert.match(body, /Base: `base-sha`/);
   assert.match(body, /Head: `head-sha`/);

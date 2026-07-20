@@ -1,18 +1,18 @@
-# Impact Analysis Architecture
+# PR Impact Analysis Architecture
 
 ## Purpose and document boundary
 
 This document explains how the system works, what it can prove, and how it
 recovers from failure. It is the engineering reference.
 
-The [README](../README.md) is the product and judge entry point: value
-proposition, live/demo access, supported repositories, local setup, deployment,
+The [README](../README.md) is the product and developer entry point: value
+proposition, live examples, supported repositories, local setup, deployment,
 and commands. It intentionally does not duplicate the implementation detail
 below.
 
 ## Product contract
 
-Impact Analysis tells a developer which product entrypoints deserve attention
+PR Impact Analysis tells a developer which product entrypoints deserve attention
 before a pull request merges. Each reachability claim is backed by an exact-SHA,
 resolved file-import path.
 
@@ -39,7 +39,7 @@ flowchart TD
 
 ## Runtime topology
 
-The hackathon deployment is intentionally one always-on Node process plus
+The current deployment is intentionally one always-on Node process plus
 PostgreSQL. Express accepts webhooks quickly; embedded worker loops consume the
 durable jobs independently. This keeps the infrastructure small without making
 webhook processing synchronous.
@@ -180,8 +180,19 @@ prominence:
 | Technical-only | Analytics, infrastructure, styling, configuration, testing, or UI primitive | Technical context; no broad customer-flow recommendation |
 | Evidence-only | Unknown or unsupported source | Evidence only; no recommendation |
 
-Each route/API appears once at its highest tier. All verified paths are
-retained in evidence even when an item is not promoted to a visible check.
+Each route/API appears once at its highest tier. Only Primary and Secondary
+items can create visible verification scenarios. The compact impact map remains
+visible as auditable proof of reachability; Technical-only/Evidence-only facts
+and genuine analysis limitations stay muted or collapsed instead of competing
+with the report's main task.
+
+The semantic packet evaluates ranked Primary/Secondary candidates until it has
+five targets with both an entrypoint anchor and supported behavioral evidence.
+It does not let an ungrounded candidate consume a target slot. Ranking is
+deterministic: Primary before Secondary, direct before indirect, shorter
+resolved path first, then stable project and route order. At most two validated
+scenarios render per selected entrypoint; additional prioritized entrypoints are
+disclosed in Analysis details rather than silently omitted.
 
 ## Bounded PR semantic analysis
 
@@ -276,9 +287,10 @@ recreated and its mutable pointer repaired.
   requests read/write.
 - Secrets, private keys, source excerpts, report Markdown, and tokens are not
   written to structured logs.
-- The private GitHub App is restricted to controlled demo repositories for the
-  hackathon. A public webhook endpoint alone does not permit unauthenticated
-  work because invalid signatures are rejected.
+- Restrict App installations to approved repositories until admission controls,
+  rate limiting, and spending limits are in place. A public webhook endpoint
+  alone does not permit unauthenticated work because invalid signatures are
+  rejected.
 - Repository-level AI assistance can be disabled. When disabled, no PR source
   is sent to OpenAI and the deterministic fallback remains available.
 
