@@ -71,13 +71,26 @@ function displayEntrypoint(item: ImpactAssessmentItem, input?: PrSemanticInput):
 
 function pageDisplayName(item: ImpactAssessmentItem, input?: PrSemanticInput): string {
   const target = input?.targets.find((candidate) => candidate.id === targetIdFor(item));
-  const entrypointExcerpt = target?.anchors.find((anchor) => anchor.kind === "entrypoint")?.excerpt;
-  const heading = entrypointExcerpt ? visiblePageHeading(entrypointExcerpt) : null;
+  // The route file often delegates its visible heading to a rendered child.
+  // Consider every bounded, graph-relevant anchor before falling back to a
+  // mechanical route label.
+  const heading = target?.anchors.map((anchor) => visiblePageHeading(anchor.excerpt)).find((value): value is string => Boolean(value)) ?? null;
   if (heading) return heading;
   const route = item.routePath ?? routePath(item.path);
   if (route === "/") return "Home page";
-  const name = route.split("/").filter(Boolean).map((segment) => humanizeIdentifier(segment.replace(/[\[\]]/g, "").replace(/([a-z])([A-Z])/g, "$1 $2"))).join(" ");
+  const segments = route.split("/").filter(Boolean);
+  // Short static prefixes such as /s/[publicId] are implementation routing
+  // details, not meaningful area names. Prefer the named dynamic segment when
+  // there is no source-visible heading to use.
+  const dynamicSegments = segments.filter((segment) => /^\[.+\]$/.test(segment));
+  const name = (dynamicSegments.length ? dynamicSegments : segments).map(humanizeRouteSegment).join(" ");
   return name ? `${name} page` : "Application page";
+}
+
+function humanizeRouteSegment(segment: string): string {
+  return humanizeIdentifier(segment.replace(/[\[\]]/g, "").replace(/([a-z])([A-Z])/g, "$1 $2"))
+    .replace(/\bId\b/g, "ID")
+    .replace(/\bApi\b/g, "API");
 }
 
 function visiblePageHeading(excerpt: string): string | null {

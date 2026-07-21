@@ -12,13 +12,17 @@ below.
 
 ## Product contract
 
-PR Impact Analysis tells a developer which product entrypoints deserve attention
-before a pull request merges. Each reachability claim is backed by an exact-SHA,
-resolved file-import path.
+PR Impact Analysis identifies product entrypoints that deserve manual
+verification before a pull request merges. Each impact claim is backed by exact
+base/head source revisions and one of: a direct changed-entrypoint fact, a
+resolved static file-import path, or—where supported—a verified protocol
+binding.
 
-The system does **not** claim that a regression exists, establish runtime
-behavior, prove symbol-level use, replace CI, or infer dynamic routing. AI may
-explain supplied code and phrase a suggestion, but never establishes impact.
+The system provides source-grounded verification suggestions, not regression
+findings or exhaustive test coverage. It does **not** prove runtime behavior,
+symbol-level use, dynamic routing, or every possible user workflow; it also
+does not replace CI. AI may summarize supplied PR context and phrase a
+suggestion, but never establishes reachability or impact.
 
 ```mermaid
 flowchart TD
@@ -191,10 +195,11 @@ both an entrypoint anchor and supported behavioral evidence. An ungrounded
 candidate never consumes a slot because there is no target-count cutoff.
 Ranking is deterministic: Primary before Secondary, direct before indirect,
 shorter resolved path first, then stable project and route order. Every
-distinct validated scenario renders for an eligible entrypoint. Each individual
-scenario is kept readable with at most three actions and three expected
-outcomes; routes without enough eligible source evidence remain visible only as
-an explicit analysis limitation.
+validated scenario returned for an eligible entrypoint renders. This does not
+claim that the source reveals every possible workflow or test case. Each
+individual scenario is kept readable with at most three actions and three
+expected outcomes; routes without enough eligible source evidence remain
+visible only as an explicit analysis limitation.
 
 ## Bounded PR semantic analysis
 

@@ -128,8 +128,12 @@ const scenarioSchema = z.object({
   // bounded provider surplus here; validateSemanticResult canonicalizes every
   // accepted scenario to at most three actions and three expected outcomes.
   // Rejecting it here would turn an otherwise grounded report into a fallback.
-  actions: z.array(z.string().min(1).max(280)).min(1).max(12),
-  expected: z.array(z.string().min(1).max(280)).min(1).max(12),
+  // A provider can legitimately return an empty scenario list item when it
+  // cannot ground a manual action. Accept that transport shape, then discard
+  // only that incomplete scenario during local evidence validation instead of
+  // falling back the entire PR report.
+  actions: z.array(z.string().min(1).max(280)).max(12),
+  expected: z.array(z.string().min(1).max(280)).max(12),
   hunkIds: z.array(z.string()).min(1),
   // One model citation is enough to establish a source link. Validation then
   // adds the canonical entrypoint and behavioral anchors for the selected

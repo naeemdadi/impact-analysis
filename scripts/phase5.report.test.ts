@@ -177,6 +177,18 @@ test("semantic output cannot add routes, unknown anchors, or uncited behavior", 
   assert.deepEqual(unknownHunk.verifications, []);
 });
 
+test("an incomplete provider scenario is discarded without forcing a whole-report fallback", () => {
+  const providerOutput = prSemanticResultSchema.parse({
+    changeSummaries: [],
+    verifications: [{
+      entrypointId: "entry:src/app/checkout/page.tsx",
+      scenarios: [{ ...scenario, actions: [] }],
+    }],
+  });
+  const result = validateSemanticResult(providerOutput, semanticInput);
+  assert.deepEqual(result.verifications, []);
+});
+
 test("one valid model anchor is enriched with canonical route and behavior anchors", () => {
   const providerOutput = prSemanticResultSchema.parse({
     changeSummaries: [],
@@ -215,6 +227,34 @@ test("opaque target keys are removed and pages use their visible heading instead
   assert.match(report, /_Area: Upload Documents_/);
   assert.match(report, /Upload Documents \(page\)/);
   assert.doesNotMatch(report, /entry::page::/);
+});
+
+test("dynamic routes do not expose meaningless short URL prefixes as area names", () => {
+  const dynamicAssessment: ImpactAssessment = {
+    ...assessment,
+    items: [{
+      ...assessment.items[0]!,
+      path: "src/app/s/[publicId]/page.tsx",
+      routePath: "/s/[publicId]",
+      dependencyPath: ["src/lib/price.ts", "src/app/s/[publicId]/page.tsx"],
+    }],
+  };
+  const input: PrSemanticInput = {
+    ...semanticInput,
+    targets: [{
+      ...semanticInput.targets[0]!,
+      id: "entry::page::/s/[publicId]",
+      path: "src/app/s/[publicId]/page.tsx",
+      dependencyPath: ["src/lib/price.ts", "src/app/s/[publicId]/page.tsx"],
+    }],
+  };
+  const result = validateSemanticResult({
+    changeSummaries: [],
+    verifications: [{ entrypointId: "entry::page::/s/[publicId]", scenarios: [scenario] }],
+  }, input);
+  const report = renderReport(buildReportEvidence(analysis(), dynamicAssessment), result, { status: "completed", notice: null }, input);
+  assert.match(report, /_Area: Public ID page_/);
+  assert.doesNotMatch(report, /S Public Id page|\/s\/\[publicId\]/);
 });
 
 test("a route scenario may cite any changed hunk on its verified dependency path", () => {

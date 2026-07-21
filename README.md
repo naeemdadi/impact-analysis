@@ -17,9 +17,15 @@ prioritized, source-grounded verification guidance.
 
 ## The problem
 
-CI can confirm that a pull request builds. A diff can show which files changed.
-Neither tells a reviewer which product behavior deserves manual verification
-before merge.
+AI-assisted “vibe coding” has made it possible to build and deploy more code
+than ever. The bottleneck has moved to review: teams do not have the bandwidth
+to manually trace every change through a product before it reaches production.
+
+Current code-review tools are valuable for code-quality feedback—style,
+potential correctness issues, and maintainability—but they do not reliably show the
+feature-level blast radius of a pull request. A diff shows files, and CI can
+confirm that a build passes. Neither answers: *Which user flows could this
+change affect, and what should a developer or QA engineer test before merge?*
 
 For a shared component, helper, analytics hook, or API procedure, a long list
 of importers is technically correct but rarely useful. PR Impact Analysis answers

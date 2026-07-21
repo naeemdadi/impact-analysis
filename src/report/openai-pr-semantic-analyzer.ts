@@ -26,7 +26,7 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
           "Summarize only the supplied changed-code excerpts and propose verification scenarios only for supplied prioritized entrypoints.",
           "The graph, not you, establishes reachability. Never add a route, API, behavior, workflow, motivation, or regression that is not supported by supplied evidence.",
           "Every summary must cite changed hunk IDs. Every scenario must cite its entrypoint, at least one changed hunk from that target's verified dependency path, and supplied source-anchor IDs.",
-          "A scenario needs a concise user-facing title, optional setup only when shown in evidence, manual actions, and observable expected results. Use no more than three actions and no more than three expected outcomes per scenario.",
+          "Every scenario must include at least one manual user action and at least one observable expected result. If the supplied evidence cannot support both, return no scenario for that target. Use no more than three actions and no more than three expected outcomes per scenario.",
           "The verifications object must include every supplied target ID. Return every distinct, evidence-grounded scenario supported by each supplied target; do not omit a supported target or scenario merely to keep the response short. Use an empty scenarios array only when that target has no supported user-facing scenario.",
           "Describe product behavior, not implementation. Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or CI/mechanical checks.",
           "Do not produce a scenario for an API target unless its supplied anchors establish an observable integration or operator contract.",
@@ -143,7 +143,7 @@ function sanitizeScenario<T extends { title: string; setup: string | null; actio
   const setup = scenario.setup === null ? null : sanitizeProductText(scenario.setup);
   const actions = scenario.actions.map(sanitizeProductText);
   const expected = scenario.expected.map(sanitizeProductText);
-  if (!title || (scenario.setup !== null && !setup) || actions.some((value) => !value) || expected.some((value) => !value)) return null;
+  if (!title || !actions.length || !expected.length || (scenario.setup !== null && !setup) || actions.some((value) => !value) || expected.some((value) => !value)) return null;
   return { ...scenario, title, setup, actions: actions as string[], expected: expected as string[] };
 }
 
