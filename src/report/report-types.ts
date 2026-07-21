@@ -131,7 +131,10 @@ const scenarioSchema = z.object({
   actions: z.array(z.string().min(1).max(280)).min(1).max(12),
   expected: z.array(z.string().min(1).max(280)).min(1).max(12),
   hunkIds: z.array(z.string()).min(1),
-  anchorIds: z.array(z.string()).min(2).max(8),
+  // One model citation is enough to establish a source link. Validation then
+  // adds the canonical entrypoint and behavioral anchors for the selected
+  // target. Accept a bounded surplus before that deterministic normalization.
+  anchorIds: z.array(z.string()).min(1).max(12),
 });
 
 export const prSemanticResultSchema = z.object({

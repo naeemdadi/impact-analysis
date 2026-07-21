@@ -172,6 +172,21 @@ test("semantic output cannot add routes, unknown anchors, or uncited behavior", 
   assert.throws(() => validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, hunkIds: ["hunk:missing"] }] }] }, semanticInput));
 });
 
+test("one valid model anchor is enriched with canonical route and behavior anchors", () => {
+  const providerOutput = prSemanticResultSchema.parse({
+    changeSummaries: [],
+    verifications: [{
+      entrypointId: "entry:src/app/checkout/page.tsx",
+      scenarios: [{ ...scenario, anchorIds: ["anchor:1:1"] }],
+    }],
+  });
+  const result = validateSemanticResult(providerOutput, semanticInput);
+  const anchorIds = result.verifications[0]?.scenarios[0]?.anchorIds ?? [];
+  assert.ok(anchorIds.includes("anchor:1:1"));
+  assert.ok(anchorIds.includes("anchor:1:2"));
+  assert.ok(anchorIds.includes("anchor:1:3"));
+});
+
 test("implementation-aware scenarios are removed while product scenarios remain", () => {
   const result = validateSemanticResult({
     changeSummaries: [
