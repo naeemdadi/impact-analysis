@@ -28,6 +28,39 @@ test("technical roles suppress analytics while promoting application logic", () 
   assert.deepEqual(assessment.items.map((item) => [item.path, item.tier]), [["src/app/checkout/page.tsx", "primary"], ["src/app/page.tsx", "technical_only"]]);
 });
 
+test("assessment retains supporting component paths when a direct route change wins visible priority", () => {
+  const assessment = assessImpact({
+    status: "ready",
+    repoId: 1,
+    pullRequestNumber: 1,
+    baseSha: "a",
+    headSha: "b",
+    impactLevel: "low",
+    changedFiles: [],
+    changedSymbols: [],
+    unresolvedImportCount: 0,
+    insufficientReason: null,
+    affectedItems: [
+      { path: "src/app/upload/page.tsx", kind: "page", impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] },
+      { path: "src/app/upload/page.tsx", kind: "page", impact: "indirect", dependencyPath: ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"] },
+    ],
+  }, {
+    baseGraph: { files: [], symbols: [], imports: [] },
+    headGraph: {
+      files: [
+        { path: "src/app/upload/page.tsx", blobSha: "page", kind: "page", classificationReason: "fixture", technicalRole: "presentation", technicalRoleReason: "fixture", technicalRoleStrength: "strong" },
+        { path: "src/components/FileUpload.tsx", blobSha: "upload", kind: "component", classificationReason: "fixture", technicalRole: "presentation", technicalRoleReason: "fixture", technicalRoleStrength: "strong" },
+      ],
+      symbols: [],
+      imports: [],
+    },
+  });
+  assert.equal(assessment.items.length, 1);
+  assert.equal(assessment.items[0]?.changedSeedPath, "src/app/upload/page.tsx");
+  assert.deepEqual(assessment.items[0]?.supportingPaths?.map((path) => path.changedSeedPath), ["src/app/upload/page.tsx", "src/components/FileUpload.tsx"]);
+  assert.deepEqual(assessment.items[0]?.supportingPaths?.map((path) => path.tier), ["primary", "secondary"]);
+});
+
 test("deadline aborts an operation with a typed timeout", async () => {
   await assert.rejects(
     runWithDeadline(5, async () => new Promise<void>(() => undefined)),

@@ -38,6 +38,18 @@ export interface AffectedItem {
   impact: "direct" | "indirect";
   // Ordered from the changed source file to this affected file.
   dependencyPath: string[];
+  /**
+   * Every verified changed-source path to this same affected item. `impact`
+   * and `dependencyPath` above remain the preferred display path; this keeps
+   * alternative evidence available when it carries richer user-visible
+   * context than the preferred path.
+   */
+  supportingPaths?: AffectedItemSupportingPath[];
+}
+
+export interface AffectedItemSupportingPath {
+  impact: "direct" | "indirect";
+  dependencyPath: string[];
 }
 
 export interface DeterministicPrAnalysis {
@@ -85,6 +97,10 @@ export const deterministicPrAnalysisSchema = z.object({
     entrypointReason: z.string().optional(),
     impact: z.enum(["direct", "indirect"]),
     dependencyPath: z.array(z.string()).min(1),
+    supportingPaths: z.array(z.object({
+      impact: z.enum(["direct", "indirect"]),
+      dependencyPath: z.array(z.string()).min(1),
+    })).min(1).optional(),
   })),
   unresolvedImportCount: z.number().int().nonnegative(),
   insufficientReason: z.string().nullable(),

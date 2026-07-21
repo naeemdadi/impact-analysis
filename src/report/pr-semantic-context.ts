@@ -2,7 +2,7 @@ import path from "node:path";
 import * as ts from "typescript";
 
 import type { RepositoryReader, SourceFile } from "../graph/types.js";
-import type { ImpactAssessment, ImpactAssessmentItem } from "../impact/impact-assessment.js";
+import type { ImpactAssessment, ImpactAssessmentItem, ImpactAssessmentSupportingPath } from "../impact/impact-assessment.js";
 import type { DeterministicPrAnalysis } from "../impact/pr-impact-types.js";
 import { log } from "../server/logger.js";
 import { targetIdFor } from "./templates.js";
@@ -49,7 +49,7 @@ export async function buildPrSemanticContext(
   // Assessment items are already deterministically ranked. Keep evaluating
   // them until five targets have enough route-and-behavior evidence; do not let
   // an ungrounded early candidate silently consume one of the five slots.
-  const candidates = assessment.items.filter(isScenarioCandidate);
+  const candidates = scenarioCandidates(assessment);
   const changed = rankChangedFiles(analysis, candidates).slice(0, maxDiffFiles);
   const [headFiles, baseFiles] = await Promise.all([
     repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths: changed.filter((file) => file.status !== "removed").map((file) => file.path) }),
@@ -69,9 +69,12 @@ export async function buildPrSemanticContext(
   let remaining = maxTotalCharacters;
   const targets: SemanticEntrypointTarget[] = [];
   const selectedItems: Array<ImpactAssessmentItem & { tier: "primary" | "secondary" }> = [];
+  const selectedTargetIds = new Set<string>();
   for (const [index, item] of candidates.entries()) {
     if (targets.length >= maxTargets) break;
     if (remaining <= 0) break;
+    const targetId = targetIdFor(item);
+    if (selectedTargetIds.has(targetId)) continue;
     const targetHunks = candidateHunks.filter((hunk) => hunk.path === item.changedSeedPath);
     if (!targetHunks.length) continue;
     const paths = uniquePaths([item.path, ...item.dependencyPath.slice(0, -1).reverse(), item.changedSeedPath]).filter(isAllowedSourcePath);
@@ -82,8 +85,9 @@ export async function buildPrSemanticContext(
     if (!hasScenarioGrounding(item, anchors)) continue;
     remaining -= anchors.reduce((total, anchor) => total + anchor.excerpt.length, 0);
     selectedItems.push(item);
+    selectedTargetIds.add(targetId);
     targets.push({
-      id: targetIdFor(item),
+      id: targetId,
       path: item.path,
       kind: item.kind,
       tier: item.tier,
@@ -141,6 +145,42 @@ function sourceReferencesFromHunks(hunks: UnidentifiedHunk[]): SourceReference[]
 
 function isScenarioCandidate(item: ImpactAssessmentItem): item is ImpactAssessmentItem & { tier: "primary" | "secondary" } {
   return item.tier === "primary" || item.tier === "secondary";
+}
+
+/**
+ * Assessment deduplicates visible entrypoints at their highest tier. Preserve
+ * its ranking, but expand each entrypoint into the independently proven paths
+ * that may supply user-visible interaction evidence for a scenario.
+ */
+function scenarioCandidates(assessment: ImpactAssessment): Array<ImpactAssessmentItem & { tier: "primary" | "secondary" }> {
+  return assessment.items.flatMap((item) => {
+    if (!isScenarioCandidate(item)) return [];
+    const supportingPaths = item.supportingPaths?.length ? item.supportingPaths : [supportingPathFromItem(item)];
+    return supportingPaths
+      .filter((path) => path.tier === "primary" || path.tier === "secondary")
+      .map((path) => ({
+        ...item,
+        // Keep the entrypoint's visible tier. Its supporting path supplies
+        // hunk and behavioral evidence, not a second report target.
+        tier: item.tier,
+        changedSeedPath: path.changedSeedPath,
+        technicalRole: path.technicalRole,
+        technicalRoleReason: path.technicalRoleReason,
+        impact: path.impact,
+        dependencyPath: path.dependencyPath,
+      }));
+  });
+}
+
+function supportingPathFromItem(item: ImpactAssessmentItem): ImpactAssessmentSupportingPath {
+  return {
+    changedSeedPath: item.changedSeedPath,
+    technicalRole: item.technicalRole,
+    technicalRoleReason: item.technicalRoleReason,
+    tier: item.tier,
+    impact: item.impact,
+    dependencyPath: item.dependencyPath,
+  };
 }
 
 function rankChangedFiles(analysis: DeterministicPrAnalysis, candidates: ImpactAssessmentItem[]): DeterministicPrAnalysis["changedFiles"] {

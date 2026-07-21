@@ -68,6 +68,49 @@ test("report renders source-grounded scenarios without visible file paths or sou
   assert.match(report, /```mermaid/);
 });
 
+test("a direct route explains the changed child module that grounds its scenario", () => {
+  const directAssessment: ImpactAssessment = {
+    version: 2,
+    status: "ready",
+    items: [{
+      path: "src/app/upload/page.tsx",
+      kind: "page",
+      tier: "primary",
+      changedSeedPath: "src/app/upload/page.tsx",
+      technicalRole: "presentation",
+      technicalRoleReason: "fixture",
+      impact: "direct",
+      dependencyPath: ["src/app/upload/page.tsx"],
+      reason: "Primary because `/upload` is changed directly.",
+      supportingPaths: [
+        { changedSeedPath: "src/app/upload/page.tsx", technicalRole: "presentation", technicalRoleReason: "fixture", tier: "primary", impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] },
+        { changedSeedPath: "src/components/FileUpload.tsx", technicalRole: "presentation", technicalRoleReason: "fixture", tier: "secondary", impact: "indirect", dependencyPath: ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"] },
+      ],
+    }],
+  };
+  const uploadInput: PrSemanticInput = {
+    ...semanticInput,
+    changedHunks: [{ ...semanticInput.changedHunks[0]!, path: "src/components/FileUpload.tsx", symbolName: "FileUpload", symbolKind: "component" }],
+    targets: [{
+      ...semanticInput.targets[0]!,
+      id: "entry:src/app/upload/page.tsx",
+      path: "src/app/upload/page.tsx",
+      changedSeedPath: "src/components/FileUpload.tsx",
+      dependencyPath: ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"],
+      anchors: [
+        { ...semanticInput.targets[0]!.anchors[0]!, path: "src/components/FileUpload.tsx" },
+        { ...semanticInput.targets[0]!.anchors[1]!, path: "src/app/upload/page.tsx" },
+        { ...semanticInput.targets[0]!.anchors[2]!, path: "src/components/FileUpload.tsx" },
+        { ...semanticInput.targets[0]!.anchors[3]!, path: "src/app/upload/page.tsx" },
+      ],
+    }],
+  };
+  const uploadScenario = { ...scenario, hunkIds: ["hunk:1"] };
+  const semantic = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/upload/page.tsx", scenarios: [uploadScenario] }] }, uploadInput);
+  const report = renderReport(buildReportEvidence({ ...analysis(), affectedItems: [{ path: "src/app/upload/page.tsx", kind: "page", impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] }] }, directAssessment), semantic, { status: "completed", notice: null }, uploadInput);
+  assert.match(report, /\*\*Why:\*\* This page imports the modified `FileUpload`\./);
+});
+
 test("technical-only reachability stays inside collapsed evidence", () => {
   const technicalAssessment: ImpactAssessment = {
     ...assessment,
@@ -117,7 +160,7 @@ test("report discloses prioritized entrypoints that were not expanded into scena
     verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [scenario] }],
   }, semanticInput);
   const report = renderReport(buildReportEvidence(analysis(), expandedAssessment), semantic, { status: "completed", notice: null }, semanticInput);
-  assert.match(report, /1 additional prioritized entrypoint was not expanded into scenarios/);
+  assert.match(report, /1 prioritized entrypoint was not expanded into scenarios because the available source context did not support an evidence-grounded check within report limits/);
 });
 
 test("semantic output cannot add routes, unknown anchors, or uncited behavior", () => {
@@ -287,6 +330,64 @@ test("semantic context backfills past an ungrounded route candidate", async () =
   );
   assert.deepEqual(input.targets.map((target) => target.path), ["src/app/checkout/page.tsx"]);
   assert.ok(input.changedHunks.some((hunk) => hunk.path === "src/lib/price.ts"));
+});
+
+test("a directly changed route retains a changed component path for scenario grounding", async () => {
+  const base: SourceFile[] = [
+    { path: "src/app/upload/page.tsx", blobSha: "base-page", content: "import FileUpload from '../../components/FileUpload';\nexport default function UploadPage() { return <main><FileUpload /></main>; }\n" },
+    { path: "src/components/FileUpload.tsx", blobSha: "base-upload", content: "export default function FileUpload() { return <div>Choose a file</div>; }\n" },
+  ];
+  const head: SourceFile[] = [
+    { path: "src/app/upload/page.tsx", blobSha: "head-page", content: "import FileUpload from '../../components/FileUpload';\nexport default function UploadPage() { return <main><h1>Upload documents</h1><p>Review your selection before uploading.</p><FileUpload /></main>; }\n" },
+    { path: "src/components/FileUpload.tsx", blobSha: "head-upload", content: "import { useState } from 'react';\nexport default function FileUpload() { const [selected, setSelected] = useState(true); return <section>{selected && <p>report.pdf selected</p>}<button onClick={() => setSelected(false)}>Remove selected file</button></section>; }\n" },
+  ];
+  const bySha = new Map([["base", base], ["head", head]]);
+  const reader: RepositoryReader = {
+    resolveRepository: async () => ({ owner: "acme", name: "assistant", defaultBranch: "main" }),
+    resolveBranchSha: async () => "head",
+    fetchSource: async () => { throw new Error("not used"); },
+    fetchTree: async () => head.map((file) => ({ path: file.path, blobSha: file.blobSha })),
+    fetchFiles: async ({ sha, paths }) => (bySha.get(sha) ?? []).filter((file) => paths.includes(file.path)),
+    compareCommits: async () => ({ comparable: true, reason: null, changes: [] }),
+  };
+  const uploadAssessment: ImpactAssessment = {
+    version: 2,
+    status: "ready",
+    items: [{
+      path: "src/app/upload/page.tsx",
+      kind: "page",
+      tier: "primary",
+      changedSeedPath: "src/app/upload/page.tsx",
+      technicalRole: "presentation",
+      technicalRoleReason: "changed route fixture",
+      impact: "direct",
+      dependencyPath: ["src/app/upload/page.tsx"],
+      reason: "Primary because `/upload` is changed directly.",
+      supportingPaths: [
+        { changedSeedPath: "src/app/upload/page.tsx", technicalRole: "presentation", technicalRoleReason: "changed route fixture", tier: "primary", impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] },
+        { changedSeedPath: "src/components/FileUpload.tsx", technicalRole: "presentation", technicalRoleReason: "component fixture", tier: "secondary", impact: "indirect", dependencyPath: ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"] },
+      ],
+    }],
+  };
+  const input = await buildPrSemanticContext(
+    {
+      ...analysis(),
+      changedFiles: [
+        { path: "src/app/upload/page.tsx", status: "modified", graphRelevant: true },
+        { path: "src/components/FileUpload.tsx", status: "modified", graphRelevant: true },
+      ],
+    },
+    uploadAssessment,
+    reader,
+    { config: { repoId: 1, installationId: 1, owner: "acme", name: "assistant", trackedBranch: "main", aiAssistanceEnabled: true } },
+  );
+  assert.equal(input.targets.length, 1);
+  assert.equal(input.targets[0]?.path, "src/app/upload/page.tsx");
+  assert.equal(input.targets[0]?.tier, "primary");
+  assert.equal(input.targets[0]?.changedSeedPath, "src/components/FileUpload.tsx");
+  assert.deepEqual(input.targets[0]?.dependencyPath, ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"]);
+  assert.ok(input.targets[0]?.anchors.some((anchor) => anchor.kind === "interaction"));
+  assert.ok(input.changedHunks.some((hunk) => hunk.path === "src/components/FileUpload.tsx"));
 });
 
 test("strict provider schema uses only the supported subset; local validation keeps bounds", () => {

@@ -72,19 +72,26 @@ function displayEntrypoint(item: ImpactAssessmentItem): string {
 
 function humanImpactReason(item: ImpactAssessmentItem, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {
   const route = item.kind === "page" ? "page" : "API endpoint";
+  const target = input?.targets.find((candidate) => candidate.id === targetIdFor(item));
+  const changedSeedPath = target?.changedSeedPath ?? item.changedSeedPath;
+  const dependencyPath = target?.dependencyPath ?? item.dependencyPath;
+  // A directly changed route may be grounded by a separately changed child
+  // module. Explain that richer, verified path rather than hiding it behind a
+  // generic direct-change statement.
+  if (!target && item.impact === "direct") return `This ${route} changed directly.`;
+  const source = changedSourceLabel(changedSeedPath, evidence, input);
+  const directBinding = target?.anchors.some((anchor) => anchor.kind === "dependency_use" && anchor.path === item.path) ?? false;
+  if (dependencyPath.length === 2 && directBinding) return `This ${route} imports the modified ${source}.`;
+  if (dependencyPath.length === 2) return `The modified ${source} has a verified dependency path to this ${route}.`;
   if (item.impact === "direct") return `This ${route} changed directly.`;
-  const source = changedSourceLabel(item, evidence, input);
-  const directBinding = input?.targets.find((target) => target.id === targetIdFor(item))?.anchors.some((anchor) => anchor.kind === "dependency_use" && anchor.path === item.path) ?? false;
-  if (item.dependencyPath.length === 2 && directBinding) return `This ${route} imports the modified ${source}.`;
-  if (item.dependencyPath.length === 2) return `The modified ${source} has a verified dependency path to this ${route}.`;
   return `A verified dependency chain connects the modified ${source} to this ${route}.`;
 }
 
-function changedSourceLabel(item: ImpactAssessmentItem, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {
-  const hunk = input?.changedHunks.find((candidate) => candidate.path === item.changedSeedPath && candidate.symbolName);
+function changedSourceLabel(changedSeedPath: string, evidence: ReportEvidence, input: PrSemanticInput | undefined): string {
+  const hunk = input?.changedHunks.find((candidate) => candidate.path === changedSeedPath && candidate.symbolName);
   if (hunk?.symbolName) return formatSymbolName(hunk.symbolName);
-  const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === item.changedSeedPath);
-  return symbol ? formatSymbolName(symbol.name) : friendlyPathLabel(item.changedSeedPath);
+  const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === changedSeedPath);
+  return symbol ? formatSymbolName(symbol.name) : friendlyPathLabel(changedSeedPath);
 }
 
 /** The graph is visible because it is the report's compact, auditable proof of reachability. */
@@ -111,7 +118,7 @@ function renderAnalysisDetails(evidence: ReportEvidence, unavailable: ImpactAsse
   if (notExpanded.length) {
     const noun = notExpanded.length === 1 ? "entrypoint" : "entrypoints";
     const verb = notExpanded.length === 1 ? "was" : "were";
-    lines.push("", `- ${notExpanded.length} additional prioritized ${noun} ${verb} not expanded into scenarios. The report expands at most five source-grounded targets; their deterministic reachability remains recorded.`);
+    lines.push("", `- ${notExpanded.length} prioritized ${noun} ${verb} not expanded into scenarios because the available source context did not support an evidence-grounded check within report limits. Their deterministic reachability remains recorded.`);
   }
   if (evidence.unresolvedImportCount > 0) lines.push("", `- ${evidence.unresolvedImportCount} unresolved import(s)`);
   lines.push("", "</details>");

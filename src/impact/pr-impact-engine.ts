@@ -48,7 +48,7 @@ export function analyzePrImpact(input: {
   const baseFiles = new Map(input.baseGraph.files.map((file) => [file.path, file]));
   const headEntrypoints = entrypointsByFile(input.headGraph);
   const baseEntrypoints = entrypointsByFile(input.baseGraph);
-  const candidates = new Map<string, AffectedItem>();
+  const candidates = new Map<string, { selected: AffectedItem; supportingPaths: AffectedItem["supportingPaths"] }>();
 
   for (const change of changedFiles) {
     if (!change.graphRelevant) continue;
@@ -61,7 +61,9 @@ export function analyzePrImpact(input: {
     }
   }
 
-  const affectedItems = [...candidates.values()].sort(compareAffectedItems);
+  const affectedItems = [...candidates.values()]
+    .map(({ selected, supportingPaths }) => ({ ...selected, supportingPaths: (supportingPaths ?? []).sort(compareSupportingPaths) }))
+    .sort(compareAffectedItems);
   const entrypointCount = affectedItems.filter((item) => item.kind === "page" || item.kind === "api_route").length;
   const changedRoute = changedFiles.some((change) => {
     const file = headFiles.get(change.path) ?? (change.status === "removed" ? baseFiles.get(change.path) : undefined);
@@ -114,7 +116,7 @@ function toChangedSymbol(changeKind: ChangedSymbol["changeKind"], symbol: GraphS
   return { changeKind, filePath: symbol.filePath, symbolKey: symbol.symbolKey, name: symbol.name, kind: symbol.kind };
 }
 
-function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, graph: BaselineGraph, entrypoints: Map<string, NonNullable<BaselineGraph["entrypoints"]>[number][]>, seedImpact: "direct"): void {
+function addTraversal(candidates: Map<string, { selected: AffectedItem; supportingPaths: AffectedItem["supportingPaths"] }>, seedPath: string, graph: BaselineGraph, entrypoints: Map<string, NonNullable<BaselineGraph["entrypoints"]>[number][]>, seedImpact: "direct"): void {
   const files = new Map(graph.files.map((file) => [file.path, file]));
   if (!files.has(seedPath)) return;
   const dependents = new Map<string, string[]>();
@@ -139,14 +141,11 @@ function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, g
     for (const entrypoint of entrypoints.get(file.path) ?? []) {
       const kind: Extract<ProductImpactKind, "page" | "api_route"> = entrypoint.kind === "web_route" ? "page" : "api_route";
       const candidate: AffectedItem = { path: file.path, kind, projectRoot: entrypoint.projectRoot, routePath: entrypoint.routePath, httpMethod: entrypoint.httpMethod, entrypointReason: entrypoint.reason, impact, dependencyPath: current.dependencyPath };
-      const key = entrypointIdentity(candidate);
-      const prior = candidates.get(key);
-      if (!prior || shouldReplaceAffected(prior, candidate)) candidates.set(key, candidate);
+      addAffectedCandidate(candidates, entrypointIdentity(candidate), candidate);
     }
     if ((entrypoints.get(file.path) ?? []).length === 0 && productKinds.has(file.kind as ProductImpactKind)) {
       const candidate: AffectedItem = { path: file.path, kind: file.kind as ProductImpactKind, impact, dependencyPath: current.dependencyPath };
-      const prior = candidates.get(file.path);
-      if (!prior || shouldReplaceAffected(prior, candidate)) candidates.set(file.path, candidate);
+      addAffectedCandidate(candidates, file.path, candidate);
     }
     for (const dependent of dependents.get(current.path) ?? []) {
       if (!visited.has(dependent)) queue.push({ path: dependent, dependencyPath: [...current.dependencyPath, dependent] });
@@ -154,10 +153,35 @@ function addTraversal(candidates: Map<string, AffectedItem>, seedPath: string, g
   }
 }
 
+function addAffectedCandidate(
+  candidates: Map<string, { selected: AffectedItem; supportingPaths: AffectedItem["supportingPaths"] }>,
+  key: string,
+  candidate: AffectedItem,
+): void {
+  const supportingPath = { impact: candidate.impact, dependencyPath: candidate.dependencyPath };
+  const current = candidates.get(key);
+  if (!current) {
+    candidates.set(key, { selected: candidate, supportingPaths: [supportingPath] });
+    return;
+  }
+  if (!current.supportingPaths?.some((path) => sameSupportingPath(path, supportingPath))) current.supportingPaths?.push(supportingPath);
+  if (shouldReplaceAffected(current.selected, candidate)) current.selected = candidate;
+}
+
 function shouldReplaceAffected(previous: AffectedItem, next: AffectedItem): boolean {
   if (previous.impact !== next.impact) return next.impact === "direct";
   if (previous.dependencyPath.length !== next.dependencyPath.length) return next.dependencyPath.length < previous.dependencyPath.length;
   return next.dependencyPath.join("\u0000") < previous.dependencyPath.join("\u0000");
+}
+
+function compareSupportingPaths(left: NonNullable<AffectedItem["supportingPaths"]>[number], right: NonNullable<AffectedItem["supportingPaths"]>[number]): number {
+  if (left.impact !== right.impact) return left.impact === "direct" ? -1 : 1;
+  if (left.dependencyPath.length !== right.dependencyPath.length) return left.dependencyPath.length - right.dependencyPath.length;
+  return left.dependencyPath.join("\u0000").localeCompare(right.dependencyPath.join("\u0000"));
+}
+
+function sameSupportingPath(left: NonNullable<AffectedItem["supportingPaths"]>[number], right: NonNullable<AffectedItem["supportingPaths"]>[number]): boolean {
+  return left.impact === right.impact && left.dependencyPath.join("\u0000") === right.dependencyPath.join("\u0000");
 }
 
 function classifyImpactLevel(entrypointCount: number, changedRoute: boolean): ImpactLevel {

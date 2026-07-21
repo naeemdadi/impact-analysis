@@ -18,6 +18,23 @@ export interface ImpactAssessmentItem {
   impact: "direct" | "indirect";
   dependencyPath: string[];
   reason: string;
+  /**
+   * All resolved changed-source paths to this entrypoint. The visible report
+   * still renders the entrypoint once at its highest tier, while semantic
+   * scenario generation can use a lower-tier path when it contains the
+   * actual interaction or state evidence (for example, a changed component
+   * rendered by a directly changed page).
+   */
+  supportingPaths?: ImpactAssessmentSupportingPath[];
+}
+
+export interface ImpactAssessmentSupportingPath {
+  changedSeedPath: string;
+  technicalRole: TechnicalRole;
+  technicalRoleReason: string;
+  tier: ImpactTier;
+  impact: "direct" | "indirect";
+  dependencyPath: string[];
 }
 
 export interface ImpactAssessment {
@@ -46,40 +63,58 @@ export function assessImpact(
   const files = new Map<string, BaselineGraph["files"][number]>();
   for (const file of graphs?.baseGraph.files ?? []) files.set(file.path, file);
   for (const file of graphs?.headGraph.files ?? []) files.set(file.path, file);
-  const candidates = new Map<string, ImpactAssessmentItem>();
+  const candidates = new Map<string, { selected: ImpactAssessmentItem; supportingPaths: ImpactAssessmentSupportingPath[] }>();
 
   for (const item of analysis.affectedItems) {
     if (item.kind !== "page" && item.kind !== "api_route") continue;
-    const changedSeedPath = item.dependencyPath[0] ?? item.path;
-    const seed = files.get(changedSeedPath);
-    const technicalRole = seed?.technicalRole ?? "unknown";
-    const technicalRoleReason = seed?.technicalRoleReason ?? "the exact PR-head graph has no classified source file";
-    const directEntrypoint = item.impact === "direct" && (item.kind === "page" || item.kind === "api_route");
-    const tier = classifyTier(technicalRole, directEntrypoint);
-    const candidate: ImpactAssessmentItem = {
-      path: item.path,
-      kind: item.kind,
-      projectRoot: item.projectRoot,
-      routePath: item.routePath,
-      httpMethod: item.httpMethod,
-      entrypointReason: item.entrypointReason,
-      tier,
-      changedSeedPath,
-      technicalRole,
-      technicalRoleReason,
-      impact: item.impact,
-      dependencyPath: item.dependencyPath,
-      reason: policyReason(tier, technicalRole, changedSeedPath, item.routePath ?? item.path, item.dependencyPath),
-    };
-    const key = [item.projectRoot ?? "", item.kind, item.httpMethod ?? "", item.routePath ?? item.path].join("\u0000");
-    const current = candidates.get(key);
-    if (!current || compareCandidates(candidate, current) < 0) candidates.set(key, candidate);
+    const rawPaths = item.supportingPaths?.length ? item.supportingPaths : [{ impact: item.impact, dependencyPath: item.dependencyPath }];
+    for (const rawPath of rawPaths) {
+      const changedSeedPath = rawPath.dependencyPath[0] ?? item.path;
+      const seed = files.get(changedSeedPath);
+      const technicalRole = seed?.technicalRole ?? "unknown";
+      const technicalRoleReason = seed?.technicalRoleReason ?? "the exact PR-head graph has no classified source file";
+      const directEntrypoint = rawPath.impact === "direct" && (item.kind === "page" || item.kind === "api_route");
+      const tier = classifyTier(technicalRole, directEntrypoint);
+      const candidate: ImpactAssessmentItem = {
+        path: item.path,
+        kind: item.kind,
+        projectRoot: item.projectRoot,
+        routePath: item.routePath,
+        httpMethod: item.httpMethod,
+        entrypointReason: item.entrypointReason,
+        tier,
+        changedSeedPath,
+        technicalRole,
+        technicalRoleReason,
+        impact: rawPath.impact,
+        dependencyPath: rawPath.dependencyPath,
+        reason: policyReason(tier, technicalRole, changedSeedPath, item.routePath ?? item.path, rawPath.dependencyPath),
+      };
+      const supportingPath: ImpactAssessmentSupportingPath = {
+        changedSeedPath,
+        technicalRole,
+        technicalRoleReason,
+        tier,
+        impact: rawPath.impact,
+        dependencyPath: rawPath.dependencyPath,
+      };
+      const key = [item.projectRoot ?? "", item.kind, item.httpMethod ?? "", item.routePath ?? item.path].join("\u0000");
+      const current = candidates.get(key);
+      if (!current) {
+        candidates.set(key, { selected: candidate, supportingPaths: [supportingPath] });
+        continue;
+      }
+      if (!current.supportingPaths.some((path) => sameSupportingPath(path, supportingPath))) current.supportingPaths.push(supportingPath);
+      if (compareCandidates(candidate, current.selected) < 0) current.selected = candidate;
+    }
   }
 
   return {
     version: 2,
     status: "ready",
-    items: [...candidates.values()].sort(compareCandidates),
+    items: [...candidates.values()]
+      .map(({ selected, supportingPaths }) => ({ ...selected, supportingPaths: supportingPaths.sort(compareSupportingPaths) }))
+      .sort(compareCandidates),
   };
 }
 
@@ -107,4 +142,20 @@ function compareCandidates(left: ImpactAssessmentItem, right: ImpactAssessmentIt
     || (left.routePath ?? left.path).localeCompare(right.routePath ?? right.path)
     || left.path.localeCompare(right.path)
     || left.dependencyPath.join("\u0000").localeCompare(right.dependencyPath.join("\u0000"));
+}
+
+function compareSupportingPaths(left: ImpactAssessmentSupportingPath, right: ImpactAssessmentSupportingPath): number {
+  return tierRank[left.tier] - tierRank[right.tier]
+    || Number(right.impact === "direct") - Number(left.impact === "direct")
+    || left.dependencyPath.length - right.dependencyPath.length
+    || left.changedSeedPath.localeCompare(right.changedSeedPath)
+    || left.dependencyPath.join("\u0000").localeCompare(right.dependencyPath.join("\u0000"));
+}
+
+function sameSupportingPath(left: ImpactAssessmentSupportingPath, right: ImpactAssessmentSupportingPath): boolean {
+  return left.changedSeedPath === right.changedSeedPath
+    && left.technicalRole === right.technicalRole
+    && left.tier === right.tier
+    && left.impact === right.impact
+    && left.dependencyPath.join("\u0000") === right.dependencyPath.join("\u0000");
 }

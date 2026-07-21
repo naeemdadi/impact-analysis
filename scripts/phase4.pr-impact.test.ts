@@ -50,6 +50,34 @@ test("changed route is medium and a local component with one page is low", () =>
   assert.equal(changedComponent.impactLevel, "low");
 });
 
+test("a direct route change retains an indirect changed-component path to the same route", () => {
+  const base = graph(
+    [["src/app/upload/page.tsx", "page"], ["src/components/FileUpload.tsx", "component"]],
+    [["src/app/upload/page.tsx", "src/components/FileUpload.tsx", "resolved"]],
+    [symbol("src/app/upload/page.tsx", "UploadPage", "before-page"), symbol("src/components/FileUpload.tsx", "FileUpload", "before-upload")],
+  );
+  const head = {
+    ...base,
+    symbols: [symbol("src/app/upload/page.tsx", "UploadPage", "after-page"), symbol("src/components/FileUpload.tsx", "FileUpload", "after-upload")],
+  };
+  const result = analyzePrImpact({
+    request,
+    baseGraph: base,
+    headGraph: head,
+    changes: [
+      { path: "src/app/upload/page.tsx", status: "modified" },
+      { path: "src/components/FileUpload.tsx", status: "modified" },
+    ],
+  });
+  const uploadRoute = result.affectedItems.find((item) => item.path === "src/app/upload/page.tsx");
+  assert.equal(uploadRoute?.impact, "direct");
+  assert.deepEqual(uploadRoute?.dependencyPath, ["src/app/upload/page.tsx"]);
+  assert.deepEqual(uploadRoute?.supportingPaths, [
+    { impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] },
+    { impact: "indirect", dependencyPath: ["src/components/FileUpload.tsx", "src/app/upload/page.tsx"] },
+  ]);
+});
+
 test("deleted modules use base reverse edges and unresolved imports create no affected paths", () => {
   const base = graph([["src/lib/old.ts", "shared_module"], ["src/app/page.tsx", "page"]], [["src/app/page.tsx", "src/lib/old.ts", "resolved"]], [symbol("src/lib/old.ts", "oldValue", "before")]);
   const head = graph([["src/app/page.tsx", "page"]], [["src/app/page.tsx", null, "unresolved"]]);
