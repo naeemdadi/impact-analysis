@@ -30,7 +30,7 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
           "The verifications object must include every supplied target ID. Return every distinct, evidence-grounded scenario supported by each supplied target; do not omit a supported target or scenario merely to keep the response short. Use an empty scenarios array only when that target has no supported user-facing scenario.",
           "Describe product behavior, not implementation. Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or CI/mechanical checks.",
           "Do not produce a scenario for an API target unless its supplied anchors establish an observable integration or operator contract.",
-          "Use concise developer-facing language. Return JSON only.",
+          "Use concise developer-facing language. Never include entrypoint IDs, hunk IDs, anchor IDs, source paths, or route URLs in user-facing titles. Return JSON only.",
         ].join(" ") },
         { role: "user", content: JSON.stringify(input) },
       ],
@@ -139,12 +139,18 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
 
 /** Product reports observable regressions; CI owns mechanical code checks. */
 function sanitizeScenario<T extends { title: string; setup: string | null; actions: string[]; expected: string[] }>(scenario: T): T | null {
-  const title = sanitizeProductText(scenario.title);
+  const title = stripOpaqueTargetReference(sanitizeProductText(scenario.title) ?? "");
   const setup = scenario.setup === null ? null : sanitizeProductText(scenario.setup);
   const actions = scenario.actions.map(sanitizeProductText);
   const expected = scenario.expected.map(sanitizeProductText);
   if (!title || (scenario.setup !== null && !setup) || actions.some((value) => !value) || expected.some((value) => !value)) return null;
   return { ...scenario, title, setup, actions: actions as string[], expected: expected as string[] };
+}
+
+/** Models sometimes echo the transport-only target key in an otherwise valid title. */
+function stripOpaqueTargetReference(value: string): string | null {
+  const title = value.replace(/^\s*\[?entry(?:::[^\]\s]+)+\]?\s*/i, "").trim();
+  return title || null;
 }
 
 function sanitizeProductText(text: string): string | null {

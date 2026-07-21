@@ -32,7 +32,7 @@ export function renderReport(
     for (const item of scenarioTargets) {
       const scenarios = verificationByTarget.get(targetIdFor(item))!.scenarios;
       for (const scenario of scenarios) {
-        lines.push(`${scenarioNumber}. **${scenario.title}**`, `   _Route: ${displayEntrypoint(item)}_`, "");
+        lines.push(`${scenarioNumber}. **${scenario.title}**`, `   _Area: ${displayEntrypoint(item, semanticInput)}_`, "");
         if (scenario.setup) lines.push(`   **Setup:** ${scenario.setup}`, "");
         lines.push("   **Do:**", ...scenario.actions.map((action) => `   - ${action}`), "", "   **Expected Outcome:**", ...scenario.expected.map((expected) => `   - ${expected}`), "");
         lines.push(`   **Why:** ${humanImpactReason(item, scenario, semanticInput)}`, "");
@@ -41,7 +41,7 @@ export function renderReport(
     }
   }
 
-  lines.push(...renderImpactMapSection(evidence));
+  lines.push(...renderImpactMapSection(evidence, semanticInput));
   const selectedSemanticTargetIds = new Set(semanticInput?.targets.map((target) => target.id) ?? []);
   const semanticCompleted = guidance.status === "completed" && semanticInput?.enabled;
   const unavailable = semanticCompleted ? prioritized.filter((item) => selectedSemanticTargetIds.has(targetIdFor(item)) && !scenarioTargets.includes(item)) : [];
@@ -63,11 +63,28 @@ function deterministicChangeSummary(evidence: ReportEvidence): string[] {
   return ["No graph-relevant source change was identified."];
 }
 
-function displayEntrypoint(item: ImpactAssessmentItem): string {
-  const route = item.routePath ?? routePath(item.path);
+function displayEntrypoint(item: ImpactAssessmentItem, input?: PrSemanticInput): string {
   const project = item.projectRoot ? `${item.projectRoot} · ` : "";
-  if (item.kind === "api_route") return `${project}${item.httpMethod ? `${item.httpMethod} ` : ""}API ${route}`;
-  return `${project}${route}`;
+  if (item.kind === "api_route") return `${project}${item.httpMethod ? `${item.httpMethod} ` : ""}API ${item.routePath ?? routePath(item.path)}`;
+  return `${project}${pageDisplayName(item, input)}`;
+}
+
+function pageDisplayName(item: ImpactAssessmentItem, input?: PrSemanticInput): string {
+  const target = input?.targets.find((candidate) => candidate.id === targetIdFor(item));
+  const entrypointExcerpt = target?.anchors.find((anchor) => anchor.kind === "entrypoint")?.excerpt;
+  const heading = entrypointExcerpt ? visiblePageHeading(entrypointExcerpt) : null;
+  if (heading) return heading;
+  const route = item.routePath ?? routePath(item.path);
+  if (route === "/") return "Home page";
+  const name = route.split("/").filter(Boolean).map((segment) => humanizeIdentifier(segment.replace(/[\[\]]/g, "").replace(/([a-z])([A-Z])/g, "$1 $2"))).join(" ");
+  return name ? `${name} page` : "Application page";
+}
+
+function visiblePageHeading(excerpt: string): string | null {
+  const match = excerpt.match(/<h1(?:\s[^>]*)?>([\s\S]*?)<\/h1>/i);
+  if (!match?.[1]) return null;
+  const text = match[1].replace(/<[^>]+>/g, "").replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 120) : null;
 }
 
 function humanImpactReason(item: ImpactAssessmentItem, scenario: SemanticScenario, input: PrSemanticInput | undefined): string {
@@ -92,12 +109,12 @@ function humanImpactReason(item: ImpactAssessmentItem, scenario: SemanticScenari
 function changedModuleLabel(pathValue: string): string { return friendlyPathLabel(pathValue); }
 
 /** The graph is visible because it is the report's compact, auditable proof of reachability. */
-function renderImpactMapSection(evidence: ReportEvidence): string[] {
+function renderImpactMapSection(evidence: ReportEvidence, input?: PrSemanticInput): string[] {
   return [
     "### Impact map",
     "",
     "```mermaid",
-    ...renderImpactMap(evidence),
+    ...renderImpactMap(evidence, input),
     "```",
     "",
     "Red = changed source · Blue = affected route/API · Dashed gray = technical-only reachability.",
@@ -129,7 +146,7 @@ interface ImpactMapPath {
   dependencyPath: string[];
 }
 
-function renderImpactMap(evidence: ReportEvidence): string[] {
+function renderImpactMap(evidence: ReportEvidence, input?: PrSemanticInput): string[] {
   const selected = evidence.impactAssessment.items.slice(0, maxImpactMapEntrypoints);
   const paths: ImpactMapPath[] = [];
   const nodes = new Set<string>();
@@ -149,7 +166,7 @@ function renderImpactMap(evidence: ReportEvidence): string[] {
 
   const nodeIds = new Map([...nodes].sort((left, right) => left.localeCompare(right)).map((node, index) => [node, `n${index + 1}`]));
   const lines = ["flowchart LR"];
-  for (const [node, id] of nodeIds) lines.push(`  ${id}["${mermaidNodeLabel(node, evidence, paths)}"]`);
+  for (const [node, id] of nodeIds) lines.push(`  ${id}["${mermaidNodeLabel(node, evidence, paths, input)}"]`);
   const edgeKinds = new Map<string, "product" | "technical">();
   for (const path of paths) {
     for (let index = 0; index < path.dependencyPath.length - 1; index += 1) {
@@ -181,9 +198,9 @@ function uniqueNodeIds(paths: string[], nodeIds: Map<string, string>): string[] 
   return [...new Set(paths.map((item) => nodeIds.get(item)).filter((id): id is string => Boolean(id)))];
 }
 
-function mermaidNodeLabel(node: string, evidence: ReportEvidence, paths: ImpactMapPath[]): string {
+function mermaidNodeLabel(node: string, evidence: ReportEvidence, paths: ImpactMapPath[], input?: PrSemanticInput): string {
   const entrypoint = paths.map((path) => path.item).find((item) => item.path === node);
-  if (entrypoint) return mermaidLabel(`${displayEntrypoint(entrypoint)} (${entrypoint.kind === "page" ? "page" : "API"})`);
+  if (entrypoint) return mermaidLabel(`${displayEntrypoint(entrypoint, input)} (${entrypoint.kind === "page" ? "page" : "API"})`);
   const symbol = evidence.changedSymbols.find((candidate) => candidate.filePath === node);
   if (symbol) return mermaidLabel(`${humanizeIdentifier(symbol.name)} (changed)`);
   const changed = paths.some((path) => path.changedSeedPath === node);

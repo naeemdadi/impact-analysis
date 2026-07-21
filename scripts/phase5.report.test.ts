@@ -54,7 +54,7 @@ test("report renders source-grounded scenarios without visible file paths or sou
   assert.equal(evidence.version, 5);
   assert.match(report, /What to verify before merging/);
   assert.match(report, /Confirm the checkout total/);
-  assert.match(report, /Route: \/checkout/);
+  assert.match(report, /Area: Checkout page/);
   assert.match(report, /\*\*Setup:\*\*/);
   assert.match(report, /\*\*Do:\*\*/);
   assert.match(report, /\*\*Expected Outcome:\*\*/);
@@ -190,6 +190,31 @@ test("one valid model anchor is enriched with canonical route and behavior ancho
   assert.ok(anchorIds.includes("anchor:1:1"));
   assert.ok(anchorIds.includes("anchor:1:2"));
   assert.ok(anchorIds.includes("anchor:1:3"));
+});
+
+test("opaque target keys are removed and pages use their visible heading instead of a route path", () => {
+  const input: PrSemanticInput = {
+    ...semanticInput,
+    targets: [{
+      ...semanticInput.targets[0]!,
+      anchors: semanticInput.targets[0]!.anchors.map((anchor) => anchor.kind === "entrypoint"
+        ? { ...anchor, excerpt: "export default function UploadPage() { return <h1>Upload Documents</h1>; }" }
+        : anchor),
+    }],
+  };
+  const result = validateSemanticResult({
+    changeSummaries: [],
+    verifications: [{
+      entrypointId: "entry:src/app/checkout/page.tsx",
+      scenarios: [{ ...scenario, title: "[entry::page::/upload] Select a supported document" }],
+    }],
+  }, input);
+  assert.equal(result.verifications[0]?.scenarios[0]?.title, "Select a supported document");
+  const report = renderReport(buildReportEvidence(analysis(), assessment), result, { status: "completed", notice: null }, input);
+  assert.match(report, /\*\*Select a supported document\*\*/);
+  assert.match(report, /_Area: Upload Documents_/);
+  assert.match(report, /Upload Documents \(page\)/);
+  assert.doesNotMatch(report, /entry::page::/);
 });
 
 test("a route scenario may cite any changed hunk on its verified dependency path", () => {
