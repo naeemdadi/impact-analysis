@@ -58,7 +58,7 @@ test("report renders source-grounded scenarios without visible file paths or sou
   assert.match(report, /\*\*Setup:\*\*/);
   assert.match(report, /\*\*Do:\*\*/);
   assert.match(report, /\*\*Expected Outcome:\*\*/);
-  assert.match(report, /\*\*Why:\*\* This page imports the modified `price`/);
+  assert.match(report, /\*\*Why:\*\* This page imports the modified Price module/);
   assert.doesNotMatch(report, /in `src\//);
   assert.doesNotMatch(report, /All resolved dependency paths|Review the user-visible behavior/);
   assert.doesNotMatch(report, /^### Technical impact$/m);
@@ -108,7 +108,9 @@ test("a direct route explains the changed child module that grounds its scenario
   const uploadScenario = { ...scenario, hunkIds: ["hunk:1"] };
   const semantic = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/upload/page.tsx", scenarios: [uploadScenario] }] }, uploadInput);
   const report = renderReport(buildReportEvidence({ ...analysis(), affectedItems: [{ path: "src/app/upload/page.tsx", kind: "page", impact: "direct", dependencyPath: ["src/app/upload/page.tsx"] }] }, directAssessment), semantic, { status: "completed", notice: null }, uploadInput);
-  assert.match(report, /\*\*Why:\*\* This page imports the modified `FileUpload`\./);
+  assert.match(report, /\*\*Why:\*\* This page imports the modified File Upload module\./);
+  assert.match(report, /File Upload module \(changed\)/);
+  assert.match(report, /-->/);
 });
 
 test("technical-only reachability stays inside collapsed evidence", () => {
