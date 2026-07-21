@@ -25,7 +25,7 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
         { role: "developer", content: [
           "Summarize only the supplied changed-code excerpts and propose verification scenarios only for supplied prioritized entrypoints.",
           "The graph, not you, establishes reachability. Never add a route, API, behavior, workflow, motivation, or regression that is not supported by supplied evidence.",
-          "Every summary must cite changed hunk IDs. Every scenario must cite its entrypoint, at least one changed hunk, and supplied source-anchor IDs.",
+          "Every summary must cite changed hunk IDs. Every scenario must cite its entrypoint, at least one changed hunk from that target's verified dependency path, and supplied source-anchor IDs.",
           "A scenario needs a concise user-facing title, optional setup only when shown in evidence, manual actions, and observable expected results. Use no more than three actions and no more than three expected outcomes per scenario.",
           "The verifications object must include every supplied target ID. Return every distinct, evidence-grounded scenario supported by each supplied target; do not omit a supported target or scenario merely to keep the response short. Use an empty scenarios array only when that target has no supported user-facing scenario.",
           "Describe product behavior, not implementation. Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or CI/mechanical checks.",
@@ -83,25 +83,31 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
   const hunkById = new Map(input.changedHunks.map((hunk) => [hunk.id, hunk]));
   const targets = new Map(input.targets.map((target) => [target.id, target]));
   const selectedTargets = new Set<string>();
-  for (const summary of result.changeSummaries) for (const id of summary.hunkIds) if (!hunkById.has(id)) throw new Error(`unknown changed hunk ${id}`);
 
   const verifications = [] as ReturnType<typeof prSemanticResultSchema.parse>["verifications"];
   for (const verification of result.verifications) {
-    if (selectedTargets.has(verification.entrypointId)) throw new Error(`duplicate semantic target ${verification.entrypointId}`);
+    // A malformed individual target must never contaminate valid guidance for
+    // the rest of the PR. It is excluded before rendering, with the graph
+    // evidence retained separately in the deterministic report.
+    if (selectedTargets.has(verification.entrypointId)) continue;
     selectedTargets.add(verification.entrypointId);
     const target = targets.get(verification.entrypointId);
-    if (!target) throw new Error(`unknown semantic target ${verification.entrypointId}`);
-    if (target.kind === "api_route" && !target.apiVerificationAllowed) throw new Error(`API target ${verification.entrypointId} has no observable contract evidence`);
+    if (!target) continue;
+    if (target.kind === "api_route" && !target.apiVerificationAllowed) continue;
     const anchors = new Map(target.anchors.map((anchor) => [anchor.id, anchor]));
+    // A route target may be semantically grounded through a changed child but
+    // also be directly changed itself. Both hunks are valid evidence when they
+    // sit on the exact verified path; requiring only changedSeedPath rejects a
+    // sound scenario that correctly cites the route's own changed hunk.
+    const allowedHunkPaths = new Set([target.path, target.changedSeedPath, ...target.dependencyPath]);
     const titles = new Set<string>();
     const scenarios = [] as typeof verification.scenarios;
     for (const rawScenario of verification.scenarios) {
       const scenario = { ...rawScenario, actions: rawScenario.actions.slice(0, 3), expected: rawScenario.expected.slice(0, 3) };
-      if (titles.has(scenario.title)) throw new Error(`duplicate scenario title for ${verification.entrypointId}`);
-      titles.add(scenario.title);
-      if (!scenario.hunkIds.some((id) => hunkById.get(id)?.path === target.changedSeedPath)) throw new Error(`scenario does not cite its changed seed ${target.changedSeedPath}`);
-      for (const id of scenario.hunkIds) if (!hunkById.has(id)) throw new Error(`unknown changed hunk ${id}`);
-      for (const id of scenario.anchorIds) if (!anchors.has(id)) throw new Error(`anchor ${id} does not belong to ${verification.entrypointId}`);
+      if (titles.has(scenario.title)) continue;
+      if (scenario.hunkIds.some((id) => !hunkById.has(id))) continue;
+      if (!scenario.hunkIds.some((id) => allowedHunkPaths.has(hunkById.get(id)!.path))) continue;
+      if (scenario.anchorIds.some((id) => !anchors.has(id))) continue;
       // The entrypoint ID already selects this exact route. Add its canonical
       // anchor deterministically when the model omits the redundant citation.
       const anchorIds = [...new Set(scenario.anchorIds)];
@@ -111,10 +117,11 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
       if (behavioralAnchor && !anchorIds.includes(behavioralAnchor.id)) anchorIds.splice(entrypointAnchor ? 1 : 0, 0, behavioralAnchor.id);
       if (anchorIds.length > 8) anchorIds.length = 8;
       const citedAnchors = anchorIds.map((id) => anchors.get(id)!);
-      if (!citedAnchors.some((anchor) => anchor.kind === "entrypoint")) throw new Error(`target lacks an entrypoint anchor for ${verification.entrypointId}`);
-      if (!citedAnchors.some((anchor) => ["interaction", "state", "api_contract", "test"].includes(anchor.kind))) throw new Error(`target lacks behavioral evidence for ${verification.entrypointId}`);
+      if (!citedAnchors.some((anchor) => anchor.kind === "entrypoint")) continue;
+      if (!citedAnchors.some((anchor) => ["interaction", "state", "api_contract", "test"].includes(anchor.kind))) continue;
       const sanitized = sanitizeScenario(scenario);
       if (!sanitized) continue;
+      titles.add(scenario.title);
       scenarios.push({ ...sanitized, anchorIds });
     }
     if (scenarios.length) verifications.push({ ...verification, scenarios });
@@ -122,6 +129,7 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
   return {
     ...result,
     changeSummaries: result.changeSummaries.flatMap((summary) => {
+      if (summary.hunkIds.some((id) => !hunkById.has(id))) return [];
       const text = sanitizeProductText(summary.summary);
       return text ? [{ ...summary, summary: text }] : [];
     }),

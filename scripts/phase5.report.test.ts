@@ -164,12 +164,15 @@ test("report discloses prioritized entrypoints that were not expanded into scena
 });
 
 test("semantic output cannot add routes, unknown anchors, or uncited behavior", () => {
-  assert.throws(() => validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:missing", scenarios: [scenario] }] }, semanticInput));
-  assert.throws(() => validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, anchorIds: ["anchor:1:2", "anchor:missing"] }] }] }, semanticInput));
+  const unknownTarget = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:missing", scenarios: [scenario] }] }, semanticInput);
+  assert.deepEqual(unknownTarget.verifications, []);
+  const unknownAnchor = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, anchorIds: ["anchor:1:2", "anchor:missing"] }] }] }, semanticInput);
+  assert.deepEqual(unknownAnchor.verifications, []);
   const normalized = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, anchorIds: ["anchor:1:1", "anchor:1:4"] }] }] }, semanticInput);
   assert.ok(normalized.verifications[0]?.scenarios[0]?.anchorIds.includes("anchor:1:2"));
   assert.ok(normalized.verifications[0]?.scenarios[0]?.anchorIds.includes("anchor:1:3"));
-  assert.throws(() => validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, hunkIds: ["hunk:missing"] }] }] }, semanticInput));
+  const unknownHunk = validateSemanticResult({ changeSummaries: [], verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{ ...scenario, hunkIds: ["hunk:missing"] }] }] }, semanticInput);
+  assert.deepEqual(unknownHunk.verifications, []);
 });
 
 test("one valid model anchor is enriched with canonical route and behavior anchors", () => {
@@ -185,6 +188,19 @@ test("one valid model anchor is enriched with canonical route and behavior ancho
   assert.ok(anchorIds.includes("anchor:1:1"));
   assert.ok(anchorIds.includes("anchor:1:2"));
   assert.ok(anchorIds.includes("anchor:1:3"));
+});
+
+test("a route scenario may cite any changed hunk on its verified dependency path", () => {
+  const directRouteHunk = { ...semanticInput.changedHunks[0]!, id: "hunk:route", path: "src/app/checkout/page.tsx", symbolName: "Checkout" };
+  const input: PrSemanticInput = { ...semanticInput, changedHunks: [semanticInput.changedHunks[0]!, directRouteHunk] };
+  const result = validateSemanticResult({
+    changeSummaries: [],
+    verifications: [{
+      entrypointId: "entry:src/app/checkout/page.tsx",
+      scenarios: [{ ...scenario, hunkIds: ["hunk:route"] }],
+    }],
+  }, input);
+  assert.deepEqual(result.verifications[0]?.scenarios[0]?.hunkIds, ["hunk:route"]);
 });
 
 test("implementation-aware scenarios are removed while product scenarios remain", () => {
