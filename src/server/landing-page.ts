@@ -2,8 +2,10 @@ const REPOSITORY_URL = "https://github.com/naeemdadi/impact-analysis";
 const README_URL = `${REPOSITORY_URL}#readme`;
 const ARCHITECTURE_URL = `${REPOSITORY_URL}/blob/main/docs/ARCHITECTURE.md`;
 const DEMO_VIDEO_URL = "https://youtu.be/FK4TzBxY6dY";
-const DEMO_PULL_REQUEST_URL =
+const DEMO_ROUTE_FLOW_PULL_REQUEST_URL =
   "https://github.com/naeemdadi/rag-chatbot-assistant/pull/6";
+const DEMO_SHARED_IMPACT_PULL_REQUEST_URL =
+  "https://github.com/naeemdadi/rag-chatbot-assistant/pull/7";
 
 /**
  * A public, static product page. It deliberately contains no operational state:
@@ -132,6 +134,13 @@ export function renderLandingPage(): string {
       .report-card-copy small { color: var(--mint); font-size: .72rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
       .report-card-copy h3 { margin: .55rem 0 .45rem; font-size: 1.08rem; }
       .report-card-copy p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.55; }
+      .live-demo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; margin-top: 1.2rem; }
+      .live-demo-card { display: flex; flex-direction: column; min-height: 14rem; padding: 1.45rem; border: 1px solid rgba(115, 182, 255, .24); border-radius: 1rem; color: var(--text); background: linear-gradient(145deg, rgba(25, 37, 66, .78), rgba(13, 18, 32, .9)); text-decoration: none; transition: transform .18s ease, border-color .18s ease; }
+      .live-demo-card:hover { transform: translateY(-4px); border-color: rgba(117, 227, 192, .55); }
+      .live-demo-card small { color: var(--mint); font-size: .72rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+      .live-demo-card h3 { margin: .72rem 0 .55rem; font-size: 1.2rem; letter-spacing: -.025em; }
+      .live-demo-card p { margin: 0; color: var(--muted); font-size: .91rem; line-height: 1.6; }
+      .live-demo-card span { margin-top: auto; padding-top: 1.2rem; color: var(--blue); font-size: .88rem; font-weight: 720; }
 
       .demo { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: center; margin-bottom: 7rem; padding: clamp(2rem, 5vw, 4rem); overflow: hidden; border: 1px solid rgba(156, 140, 255, .32); border-radius: 1.2rem; background: linear-gradient(120deg, rgba(55, 48, 126, .5), rgba(18, 34, 63, .55)); }
       .demo h2 { max-width: 16ch; }
@@ -162,7 +171,7 @@ export function renderLandingPage(): string {
         .report-window img { min-height: 32rem; }
         .trust-strip { grid-template-columns: 1fr; margin-bottom: 5rem; }
         .trust-strip div + div { border-top: 1px solid var(--line); border-left: 0; }
-        .steps, .principles, .report-grid { grid-template-columns: 1fr; }
+        .steps, .principles, .report-grid, .live-demo-grid { grid-template-columns: 1fr; }
         .principles { padding: 5.5rem 0; }
         .principle { min-height: auto; }
         .demo { grid-template-columns: 1fr; margin-bottom: 5rem; }
@@ -201,12 +210,12 @@ export function renderLandingPage(): string {
             <p class="lede">PR Impact Analysis traces pull-request changes through your codebase, identifies the routes that can truly be reached, and posts practical verification guidance directly on the PR.</p>
             <div class="hero-actions">
               <a class="button button-primary" href="${DEMO_VIDEO_URL}" target="_blank" rel="noopener noreferrer">Watch the demo video ↗</a>
-              <a class="button button-secondary" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open the live PR comment ↗</a>
+              <a class="button button-secondary" href="${DEMO_ROUTE_FLOW_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open the route-flow demo ↗</a>
             </div>
             <p class="proof"><span><b class="check">✓</b> Deterministic graph evidence</span><span><b class="check">✓</b> GPT-5.6, bounded by source citations</span></p>
           </div>
 
-          <a class="report-window" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer" aria-label="Open the public demo pull request with the live PR Impact Analysis comment">
+          <a class="report-window" href="${DEMO_ROUTE_FLOW_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer" aria-label="Open the public route-flow demo pull request with the live PR Impact Analysis comment">
             <div class="window-bar" aria-hidden="true"><span class="window-dots"><i></i><i></i><i></i></span><span class="window-pill">github.com · pull request</span></div>
             <img src="/images/PR-1.png" alt="A PR Impact Analysis pull request report showing changes, verification guidance, and technical evidence." />
             <span class="report-label">Open the live sticky PR comment ↗</span>
@@ -268,16 +277,30 @@ export function renderLandingPage(): string {
               <div class="report-card-copy"><small>Example report 02</small><h3>Reddit review submission and seller profile</h3><p>Route-specific checks stay concise, while technical evidence remains available on demand.</p></div>
             </a>
           </div>
+          <div class="live-demo-grid" aria-label="Live public pull request demos">
+            <a class="live-demo-card" href="${DEMO_ROUTE_FLOW_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">
+              <small>Live demo · PR #6</small>
+              <h3>Document upload flow</h3>
+              <p>A route-local change produces concrete checks for selecting, validating, removing, and processing uploaded documents.</p>
+              <span>Open the live PR comment ↗</span>
+            </a>
+            <a class="live-demo-card" href="${DEMO_SHARED_IMPACT_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">
+              <small>Live demo · PR #7</small>
+              <h3>Shared navigation across two areas</h3>
+              <p>One reusable navigation change reaches both the chat and document-upload experiences, with separate checks for each.</p>
+              <span>Open the live PR comment ↗</span>
+            </a>
+          </div>
         </section>
 
         <section class="demo" aria-labelledby="demo-heading">
           <div>
             <p class="section-tag">Watch it work</p>
-            <h2 id="demo-heading">See the review loop on a real pull request.</h2>
-            <p>Watch the three-minute walkthrough, then inspect the public PR to see the sticky report, source-grounded verification guidance, and evidence map in GitHub.</p>
+            <h2 id="demo-heading">Watch one review loop. Inspect two kinds of impact.</h2>
+            <p>The walkthrough follows the document-upload flow. The second public PR shows how the same evidence-first approach handles a shared change that reaches two user-facing areas.</p>
             <div class="demo-actions">
               <a class="button button-primary" href="${DEMO_VIDEO_URL}" target="_blank" rel="noopener noreferrer">Watch the demo video ↗</a>
-              <a class="button button-secondary" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open demo PR #6 ↗</a>
+              <a class="button button-secondary" href="${DEMO_SHARED_IMPACT_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open shared-impact PR #7 ↗</a>
             </div>
           </div>
           <div class="demo-badge" aria-hidden="true"><em>Live demo</em>Video<br />+ PR</div>
