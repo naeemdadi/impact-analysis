@@ -160,7 +160,7 @@ test("report discloses prioritized entrypoints that were not expanded into scena
     verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [scenario] }],
   }, semanticInput);
   const report = renderReport(buildReportEvidence(analysis(), expandedAssessment), semantic, { status: "completed", notice: null }, semanticInput);
-  assert.match(report, /1 prioritized entrypoint was not expanded into scenarios because the available source context did not support an evidence-grounded check within report limits/);
+  assert.match(report, /1 prioritized entrypoint was not expanded into scenarios because the available source did not contain enough eligible evidence for a grounded check/);
 });
 
 test("semantic output cannot add routes, unknown anchors, or uncited behavior", () => {
@@ -201,7 +201,7 @@ test("harmless implementation nouns are removed from user-facing scenario wordin
   assert.equal(result.verifications[0]?.scenarios[0]?.actions[0], "Use the checkout to pay.");
 });
 
-test("a valid model surplus is capped without discarding the report", () => {
+test("every distinct evidence-grounded scenario is retained", () => {
   const result = validateSemanticResult({
     changeSummaries: [],
     verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [
@@ -210,19 +210,22 @@ test("a valid model surplus is capped without discarding the report", () => {
       { ...scenario, title: "Check the receipt total" },
     ] }],
   }, semanticInput);
-  assert.equal(result.verifications[0]?.scenarios.length, 2);
-  assert.deepEqual(result.verifications[0]?.scenarios.map((item) => item.title), ["Confirm the checkout total", "Check the confirmation total"]);
+  assert.equal(result.verifications[0]?.scenarios.length, 3);
+  assert.deepEqual(result.verifications[0]?.scenarios.map((item) => item.title), ["Confirm the checkout total", "Check the confirmation total", "Check the receipt total"]);
 });
 
 test("valid action and expectation surplus is capped to a concise scenario", () => {
-  const result = validateSemanticResult({
+  const providerOutput = {
     changeSummaries: [],
     verifications: [{ entrypointId: "entry:src/app/checkout/page.tsx", scenarios: [{
       ...scenario,
-      actions: ["Open checkout.", "Select pay.", "Confirm payment.", "Return to the cart."],
-      expected: ["The total is shown.", "The confirmation is shown.", "The receipt is shown.", "The cart is cleared."],
+      actions: ["Open checkout.", "Select pay.", "Confirm payment.", "Return to the cart.", "Open order history.", "Return to checkout."],
+      expected: ["The total is shown.", "The confirmation is shown.", "The receipt is shown.", "The cart is cleared.", "The order is visible.", "Checkout remains available."],
     }] }],
-  }, semanticInput);
+  };
+  // This mirrors a provider response with more bullets than the rendered
+  // report allows. It must pass the transport schema before canonicalization.
+  const result = validateSemanticResult(prSemanticResultSchema.parse(providerOutput), semanticInput);
   assert.equal(result.verifications[0]?.scenarios[0]?.actions.length, 3);
   assert.equal(result.verifications[0]?.scenarios[0]?.expected.length, 3);
 });
@@ -332,6 +335,50 @@ test("semantic context backfills past an ungrounded route candidate", async () =
   assert.ok(input.changedHunks.some((hunk) => hunk.path === "src/lib/price.ts"));
 });
 
+test("semantic context includes every eligible prioritized route instead of truncating after five", async () => {
+  const base: SourceFile[] = [{ path: "src/lib/price.ts", blobSha: "base-price", content: "export const price = () => 1;\n" }];
+  const head: SourceFile[] = [
+    { path: "src/lib/price.ts", blobSha: "head-price", content: "export const price = () => 2;\n" },
+    ...Array.from({ length: 6 }, (_, index): SourceFile => ({
+      path: `src/app/checkout-${index + 1}/page.tsx`,
+      blobSha: `page-${index + 1}`,
+      content: `import { price } from '../../../lib/price';\nexport default function Checkout${index + 1}() { return <button>Pay {price()}</button>; }\n`,
+    })),
+  ];
+  const bySha = new Map([["base", base], ["head", head]]);
+  const reader: RepositoryReader = {
+    resolveRepository: async () => ({ owner: "acme", name: "shop", defaultBranch: "main" }),
+    resolveBranchSha: async () => "head",
+    fetchSource: async () => { throw new Error("not used"); },
+    fetchTree: async () => head.map((file) => ({ path: file.path, blobSha: file.blobSha })),
+    fetchFiles: async ({ sha, paths }) => (bySha.get(sha) ?? []).filter((file) => paths.includes(file.path)),
+    compareCommits: async () => ({ comparable: true, reason: null, changes: [] }),
+  };
+  const sixRoutes: ImpactAssessment = {
+    version: 2,
+    status: "ready",
+    items: Array.from({ length: 6 }, (_, index) => ({
+      path: `src/app/checkout-${index + 1}/page.tsx`,
+      kind: "page" as const,
+      tier: "primary" as const,
+      changedSeedPath: "src/lib/price.ts",
+      technicalRole: "application" as const,
+      technicalRoleReason: "fixture",
+      impact: "indirect" as const,
+      dependencyPath: ["src/lib/price.ts", `src/app/checkout-${index + 1}/page.tsx`],
+      reason: "Primary fixture.",
+    })),
+  };
+  const input = await buildPrSemanticContext(
+    analysis(),
+    sixRoutes,
+    reader,
+    { config: { repoId: 1, installationId: 1, owner: "acme", name: "shop", trackedBranch: "main", aiAssistanceEnabled: true } },
+  );
+  assert.equal(input.targets.length, 6);
+  assert.deepEqual(input.targets.map((target) => target.path), Array.from({ length: 6 }, (_, index) => `src/app/checkout-${index + 1}/page.tsx`));
+});
+
 test("a directly changed route retains a changed component path for scenario grounding", async () => {
   const base: SourceFile[] = [
     { path: "src/app/upload/page.tsx", blobSha: "base-page", content: "import FileUpload from '../../components/FileUpload';\nexport default function UploadPage() { return <main><FileUpload /></main>; }\n" },
@@ -390,13 +437,13 @@ test("a directly changed route retains a changed component path for scenario gro
   assert.ok(input.changedHunks.some((hunk) => hunk.path === "src/components/FileUpload.tsx"));
 });
 
-test("strict provider schema uses only the supported subset; local validation keeps bounds", () => {
+test("strict provider schema uses only the supported subset without capping scenario coverage", () => {
   const schema = JSON.stringify(semanticJsonSchema(["entry:src/app/checkout/page.tsx"]));
   assert.doesNotMatch(schema, /minLength|maxLength|minItems|maxItems/);
   assert.throws(() => prSemanticResultSchema.parse({ changeSummaries: [{ hunkIds: [], summary: "No evidence" }], verifications: [] }));
   assert.doesNotThrow(() => prSemanticResultSchema.parse({
-    changeSummaries: [{ hunkIds: Array.from({ length: 12 }, (_, index) => `hunk:${index}`), summary: "All supplied changed hunks are relevant." }],
-    verifications: [],
+    changeSummaries: [{ hunkIds: Array.from({ length: 13 }, (_, index) => `hunk:${index}`), summary: "All supplied changed hunks are relevant." }],
+    verifications: Array.from({ length: 6 }, (_, index) => ({ entrypointId: `entry:${index}`, scenarios: [] })),
   }));
 });
 

@@ -48,11 +48,12 @@ The graph is the authority for reachability. GPT-5.6 can explain only the
 bounded PR code context it is given; it cannot add routes, invent dependencies,
 claim that a regression exists, or replace CI.
 
-To keep comments useful, the report expands at most five source-grounded
-Primary/Secondary entrypoints, with up to two scenarios each. They are ordered
-deterministically: Primary before Secondary, direct before indirect, then by
-shorter resolved path and stable project/route order. Additional prioritized
-entrypoints are disclosed in Analysis details rather than silently dropped.
+The report expands every source-grounded Primary/Secondary entrypoint and every
+distinct validated scenario. They are ordered deterministically: Primary before
+Secondary, direct before indirect, then by shorter resolved path and stable
+project/route order. Each individual scenario stays concise, with at most three
+actions and three expected outcomes; an entrypoint is omitted only when its
+available source does not support an evidence-grounded check.
 
 ### What a developer sees
 

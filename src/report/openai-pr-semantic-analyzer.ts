@@ -26,8 +26,8 @@ export class OpenAIPrSemanticAnalyzer implements PrSemanticAnalyzer {
           "Summarize only the supplied changed-code excerpts and propose verification scenarios only for supplied prioritized entrypoints.",
           "The graph, not you, establishes reachability. Never add a route, API, behavior, workflow, motivation, or regression that is not supported by supplied evidence.",
           "Every summary must cite changed hunk IDs. Every scenario must cite its entrypoint, at least one changed hunk, and supplied source-anchor IDs.",
-          "A scenario needs a concise user-facing title, optional setup only when shown in evidence, manual actions, and observable expected results.",
-          "The verifications object must include every supplied target ID. Produce one scenario for every supplied page target that has interaction or state evidence before adding a second scenario anywhere. Use an empty scenarios array only when that target has no supported user-facing scenario.",
+          "A scenario needs a concise user-facing title, optional setup only when shown in evidence, manual actions, and observable expected results. Use no more than three actions and no more than three expected outcomes per scenario.",
+          "The verifications object must include every supplied target ID. Return every distinct, evidence-grounded scenario supported by each supplied target; do not omit a supported target or scenario merely to keep the response short. Use an empty scenarios array only when that target has no supported user-facing scenario.",
           "Describe product behavior, not implementation. Never mention or suggest builds, TypeScript, compilation, imports, exports, linting, analytics, telemetry, instrumentation, callbacks, props, components, hooks, handlers, functions, types, interfaces, wiring, or CI/mechanical checks.",
           "Do not produce a scenario for an API target unless its supplied anchors establish an observable integration or operator contract.",
           "Use concise developer-facing language. Return JSON only.",
@@ -95,7 +95,7 @@ export function validateSemanticResult(result: ReturnType<typeof prSemanticResul
     const anchors = new Map(target.anchors.map((anchor) => [anchor.id, anchor]));
     const titles = new Set<string>();
     const scenarios = [] as typeof verification.scenarios;
-    for (const rawScenario of verification.scenarios.slice(0, 2)) {
+    for (const rawScenario of verification.scenarios) {
       const scenario = { ...rawScenario, actions: rawScenario.actions.slice(0, 3), expected: rawScenario.expected.slice(0, 3) };
       if (titles.has(scenario.title)) throw new Error(`duplicate scenario title for ${verification.entrypointId}`);
       titles.add(scenario.title);

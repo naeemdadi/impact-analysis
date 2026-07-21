@@ -118,7 +118,7 @@ function renderAnalysisDetails(evidence: ReportEvidence, unavailable: ImpactAsse
   if (notExpanded.length) {
     const noun = notExpanded.length === 1 ? "entrypoint" : "entrypoints";
     const verb = notExpanded.length === 1 ? "was" : "were";
-    lines.push("", `- ${notExpanded.length} prioritized ${noun} ${verb} not expanded into scenarios because the available source context did not support an evidence-grounded check within report limits. Their deterministic reachability remains recorded.`);
+    lines.push("", `- ${notExpanded.length} prioritized ${noun} ${verb} not expanded into scenarios because the available source did not contain enough eligible evidence for a grounded check. Their deterministic reachability remains recorded.`);
   }
   if (evidence.unresolvedImportCount > 0) lines.push("", `- ${evidence.unresolvedImportCount} unresolved import(s)`);
   lines.push("", "</details>");

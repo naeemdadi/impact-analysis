@@ -8,13 +8,9 @@ import { log } from "../server/logger.js";
 import { targetIdFor } from "./templates.js";
 import type { ChangedHunk, PrSemanticInput, SemanticAnchorKind, SemanticEntrypointTarget, SourceContextItem, SourceReference, SourceRevision } from "./report-types.js";
 
-const maxHunks = 12;
-const maxDiffFiles = 32;
-const maxTargets = 5;
 const maxTargetAnchors = 8;
 const maxAnchorCharacters = 1_600;
 const maxTargetCharacters = 9_000;
-const maxTotalCharacters = 32_000;
 const hunkContextLines = 3;
 
 type SourceIdentity = { repoId: number; installationId: number; owner: string; name: string; branch: string };
@@ -46,11 +42,11 @@ export async function buildPrSemanticContext(
   if (!config?.aiAssistanceEnabled || analysis.status !== "ready" || !config.owner || !config.name) return disabledInput();
 
   const source: SourceIdentity = { repoId: analysis.repoId, installationId: config.installationId, owner: config.owner, name: config.name, branch: config.trackedBranch };
-  // Assessment items are already deterministically ranked. Keep evaluating
-  // them until five targets have enough route-and-behavior evidence; do not let
-  // an ungrounded early candidate silently consume one of the five slots.
+  // Assessment items are already deterministically ranked. Every candidate
+  // with enough route-and-behavior evidence is included. Request batching and
+  // presentation ordering must never silently suppress a valid user scenario.
   const candidates = scenarioCandidates(assessment);
-  const changed = rankChangedFiles(analysis, candidates).slice(0, maxDiffFiles);
+  const changed = rankChangedFiles(analysis, candidates);
   const [headFiles, baseFiles] = await Promise.all([
     repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths: changed.filter((file) => file.status !== "removed").map((file) => file.path) }),
     repositoryReader.fetchFiles({ ...source, sha: analysis.baseSha, paths: changed.filter((file) => file.status !== "added").map((file) => file.previousPath ?? file.path) }),
@@ -66,13 +62,10 @@ export async function buildPrSemanticContext(
   const candidateHunks = allHunks.map((hunk, index) => ({ ...hunk, id: `candidate-hunk:${index + 1}` }));
   const tests = await findRelatedTests(repositoryReader, source, analysis, candidates);
 
-  let remaining = maxTotalCharacters;
   const targets: SemanticEntrypointTarget[] = [];
   const selectedItems: Array<ImpactAssessmentItem & { tier: "primary" | "secondary" }> = [];
   const selectedTargetIds = new Set<string>();
   for (const [index, item] of candidates.entries()) {
-    if (targets.length >= maxTargets) break;
-    if (remaining <= 0) break;
     const targetId = targetIdFor(item);
     if (selectedTargetIds.has(targetId)) continue;
     const targetHunks = candidateHunks.filter((hunk) => hunk.path === item.changedSeedPath);
@@ -81,9 +74,8 @@ export async function buildPrSemanticContext(
     const files = await repositoryReader.fetchFiles({ ...source, sha: analysis.headSha, paths });
     const fileByPath = new Map(files.map((file) => [file.path, file]));
     for (const [filePath, file] of headByPath) if (!fileByPath.has(filePath)) fileByPath.set(filePath, file);
-    const anchors = buildTargetAnchors(item, targetHunks, fileByPath, tests, index + 1, remaining);
+    const anchors = buildTargetAnchors(item, targetHunks, fileByPath, tests, index + 1);
     if (!hasScenarioGrounding(item, anchors)) continue;
-    remaining -= anchors.reduce((total, anchor) => total + anchor.excerpt.length, 0);
     selectedItems.push(item);
     selectedTargetIds.add(targetId);
     targets.push({
@@ -206,13 +198,12 @@ function selectHunks(allHunks: UnidentifiedHunk[], candidates: ImpactAssessmentI
   const used = new Set<UnidentifiedHunk>();
   for (const item of candidates) {
     const hunk = grouped.get(item.changedSeedPath)?.[0];
-    if (hunk && !used.has(hunk) && selected.length < maxHunks) {
+    if (hunk && !used.has(hunk)) {
       selected.push(hunk);
       used.add(hunk);
     }
   }
   for (const hunk of allHunks) {
-    if (selected.length >= maxHunks) break;
     if (used.has(hunk)) continue;
     selected.push(hunk);
     used.add(hunk);
@@ -333,7 +324,6 @@ function buildTargetAnchors(
   fileByPath: Map<string, SourceFile>,
   tests: SourceFile[],
   targetIndex: number,
-  remaining: number,
 ): SourceContextItem[] {
   const anchors: SourceContextItem[] = [];
   const seedFile = fileByPath.get(item.changedSeedPath);
@@ -368,7 +358,7 @@ function buildTargetAnchors(
     if (dependencyUse) anchors.push(dependencyUse);
   }
   anchors.push(...testAnchors(tests, item, targetIndex, anchors.length));
-  return trimAnchors(anchors, Math.min(maxTargetCharacters, remaining));
+  return trimAnchors(anchors, maxTargetCharacters);
 }
 
 function anchor(input: Omit<SourceContextItem, "id">, targetIndex: number, index: number): SourceContextItem {

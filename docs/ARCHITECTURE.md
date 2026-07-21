@@ -186,13 +186,15 @@ visible as auditable proof of reachability; Technical-only/Evidence-only facts
 and genuine analysis limitations stay muted or collapsed instead of competing
 with the report's main task.
 
-The semantic packet evaluates ranked Primary/Secondary candidates until it has
-five targets with both an entrypoint anchor and supported behavioral evidence.
-It does not let an ungrounded candidate consume a target slot. Ranking is
-deterministic: Primary before Secondary, direct before indirect, shorter
-resolved path first, then stable project and route order. At most two validated
-scenarios render per selected entrypoint; additional prioritized entrypoints are
-disclosed in Analysis details rather than silently omitted.
+The semantic packet evaluates every ranked Primary/Secondary candidate with
+both an entrypoint anchor and supported behavioral evidence. An ungrounded
+candidate never consumes a slot because there is no target-count cutoff.
+Ranking is deterministic: Primary before Secondary, direct before indirect,
+shorter resolved path first, then stable project and route order. Every
+distinct validated scenario renders for an eligible entrypoint. Each individual
+scenario is kept readable with at most three actions and three expected
+outcomes; routes without enough eligible source evidence remain visible only as
+an explicit analysis limitation.
 
 ## Bounded PR semantic analysis
 
@@ -202,13 +204,11 @@ disclosed in Analysis details rather than silently omitted.
 > suggested verification guidance. Deterministic graph evidence is unaffected.
 
 After the graph and policy select allowed targets, the report worker prepares
-one source packet. It can contain:
-
-- up to 12 locally calculated changed hunks, each capped at 4,000 characters;
-- at most five Primary/Secondary pages or APIs;
-- at most six exact PR-head local files per target, selected from the
-  entrypoint and a verified dependency path; and
-- context IDs, paths, blob SHAs, and line ranges for every excerpt.
+one source packet. It contains every eligible Primary/Secondary page or API,
+the locally calculated changed hunks required to ground those targets, and
+exact PR-head route/dependency source anchors. Each target remains bounded to
+eight anchors and 9,000 characters, and every excerpt carries a context ID,
+path, blob SHA, and line range.
 
 Environment files, secrets, lockfiles, generated output, dependencies,
 scripts, migrations, configuration, and database source are excluded before an
@@ -216,8 +216,10 @@ OpenAI request. The system does not upload a repository wholesale, use vector
 search, create feature cards, or perform background AI indexing.
 
 The model receives a strict JSON schema. It may summarize cited changed hunks
-and suggest at most three product-facing checks per already-prioritized target.
-Each output must cite supplied hunk and context IDs. Unknown IDs, duplicate or
+and suggest every distinct product-facing check supported by an
+already-prioritized target. Each output must cite supplied hunk and context IDs;
+each rendered check is limited to three actions and three expected outcomes.
+Unknown IDs, duplicate or
 unsupported checks, CI/build/typecheck suggestions, malformed data, and
 technical-only target scenarios are rejected locally.
 

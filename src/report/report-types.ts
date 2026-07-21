@@ -3,8 +3,6 @@ import { z } from "zod";
 import type { DeterministicPrAnalysis, ProductImpactKind } from "../impact/pr-impact-types.js";
 import type { ImpactAssessment, ImpactAssessmentItem } from "../impact/impact-assessment.js";
 
-const maxChangedHunkReferences = 12;
-
 export type SourceRevision = "base" | "head";
 export type SemanticAnchorKind = "changed_declaration" | "entrypoint" | "dependency_use" | "interaction" | "state" | "api_contract" | "test";
 
@@ -126,20 +124,24 @@ export interface ReportEvidence {
 const scenarioSchema = z.object({
   title: z.string().min(1).max(160),
   setup: z.string().max(280).nullable(),
-  actions: z.array(z.string().min(1).max(280)).min(1).max(5),
-  expected: z.array(z.string().min(1).max(280)).min(1).max(5),
-  hunkIds: z.array(z.string()).min(1).max(maxChangedHunkReferences),
+  // Structured Outputs cannot reliably enforce array cardinality. Accept a
+  // bounded provider surplus here; validateSemanticResult canonicalizes every
+  // accepted scenario to at most three actions and three expected outcomes.
+  // Rejecting it here would turn an otherwise grounded report into a fallback.
+  actions: z.array(z.string().min(1).max(280)).min(1).max(12),
+  expected: z.array(z.string().min(1).max(280)).min(1).max(12),
+  hunkIds: z.array(z.string()).min(1),
   anchorIds: z.array(z.string()).min(2).max(8),
 });
 
 export const prSemanticResultSchema = z.object({
-  changeSummaries: z.array(z.object({ hunkIds: z.array(z.string()).min(1).max(maxChangedHunkReferences), summary: z.string().min(1).max(400) })).max(12),
+  changeSummaries: z.array(z.object({ hunkIds: z.array(z.string()).min(1), summary: z.string().min(1).max(400) })),
   verifications: z.array(z.object({
     entrypointId: z.string(),
-    // Provider schemas cannot reliably enforce cardinality. Accept a small
-    // surplus, then deterministically retain at most two validated scenarios.
-    scenarios: z.array(scenarioSchema).max(5),
-  })).max(5),
+    // Coverage is not capped: every distinct, evidence-grounded scenario is
+    // valuable. The renderer keeps each individual scenario concise.
+    scenarios: z.array(scenarioSchema),
+  })),
 });
 
 export function isPrioritized(item: ImpactAssessmentItem): item is ImpactAssessmentItem & { tier: "primary" | "secondary" } {
