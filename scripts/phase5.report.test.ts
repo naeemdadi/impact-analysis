@@ -477,6 +477,72 @@ test("semantic context includes every eligible prioritized route instead of trun
   assert.deepEqual(input.targets.map((target) => target.path), Array.from({ length: 6 }, (_, index) => `src/app/checkout-${index + 1}/page.tsx`));
 });
 
+test("semantic context finds navigation controls rendered inside a map callback", async () => {
+  const navigation = [
+    "import Link from 'next/link';",
+    "const items = [{ href: '/', label: 'Chat', page: 'chat' }, { href: '/upload', label: 'Upload documents', page: 'upload' }];",
+    "export default function AppNavigation({ activePage }: { activePage: string }) {",
+    "  return <nav aria-label=\"Assistant navigation\">{items.map((item) => {",
+    "    const isActive = item.page === activePage;",
+    "    return <Link href={item.href} aria-current={isActive ? 'page' : undefined}>{item.label}</Link>;",
+    "  })}</nav>;",
+    "}",
+  ].join("\n");
+  const base: SourceFile[] = [];
+  const head: SourceFile[] = [
+    { path: "src/components/AppNavigation.tsx", blobSha: "navigation", content: navigation },
+    { path: "src/app/page.tsx", blobSha: "home", content: "import AppNavigation from '@/components/AppNavigation';\nexport default function Home() { return <main><h1>AI Assistant</h1><AppNavigation activePage=\"chat\" /></main>; }\n" },
+    { path: "src/app/upload/page.tsx", blobSha: "upload", content: "import AppNavigation from '@/components/AppNavigation';\nexport default function Upload() { return <main><h1>Upload Documents</h1><AppNavigation activePage=\"upload\" /></main>; }\n" },
+  ];
+  const bySha = new Map([[
+    "base", base,
+  ], ["head", head]]);
+  const reader: RepositoryReader = {
+    resolveRepository: async () => ({ owner: "acme", name: "assistant", defaultBranch: "main" }),
+    resolveBranchSha: async () => "head",
+    fetchSource: async () => { throw new Error("not used"); },
+    fetchTree: async () => head.map((file) => ({ path: file.path, blobSha: file.blobSha })),
+    fetchFiles: async ({ sha, paths }) => (bySha.get(sha) ?? []).filter((file) => paths.includes(file.path)),
+    compareCommits: async () => ({ comparable: true, reason: null, changes: [] }),
+  };
+  const navigationAssessment: ImpactAssessment = {
+    version: 2,
+    status: "ready",
+    items: [
+      {
+        path: "src/app/page.tsx",
+        kind: "page",
+        tier: "secondary",
+        changedSeedPath: "src/components/AppNavigation.tsx",
+        technicalRole: "presentation",
+        technicalRoleReason: "shared navigation fixture",
+        impact: "indirect",
+        dependencyPath: ["src/components/AppNavigation.tsx", "src/app/page.tsx"],
+        reason: "Secondary fixture.",
+      },
+      {
+        path: "src/app/upload/page.tsx",
+        kind: "page",
+        tier: "secondary",
+        changedSeedPath: "src/components/AppNavigation.tsx",
+        technicalRole: "presentation",
+        technicalRoleReason: "shared navigation fixture",
+        impact: "indirect",
+        dependencyPath: ["src/components/AppNavigation.tsx", "src/app/upload/page.tsx"],
+        reason: "Secondary fixture.",
+      },
+    ],
+  };
+  const input = await buildPrSemanticContext(
+    { ...analysis(), changedFiles: [{ path: "src/components/AppNavigation.tsx", status: "added", graphRelevant: true }] },
+    navigationAssessment,
+    reader,
+    { config: { repoId: 1, installationId: 1, owner: "acme", name: "assistant", trackedBranch: "main", aiAssistanceEnabled: true } },
+  );
+  assert.deepEqual(input.targets.map((target) => target.path), ["src/app/page.tsx", "src/app/upload/page.tsx"]);
+  assert.ok(input.targets.every((target) => target.anchors.some((anchor) => anchor.kind === "interaction")));
+});
+
 test("a directly changed route retains a changed component path for scenario grounding", async () => {
   const base: SourceFile[] = [
     { path: "src/app/upload/page.tsx", blobSha: "base-page", content: "import FileUpload from '../../components/FileUpload';\nexport default function UploadPage() { return <main><FileUpload /></main>; }\n" },

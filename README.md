@@ -11,10 +11,6 @@ prioritized, source-grounded verification guidance.
 [Architecture](docs/ARCHITECTURE.md) ·
 [GitHub App setup](github-app/manifest.md)
 
-<p align="center">
-  <a href="images/PR-2.png"><img src="images/PR-2.png" width="480" alt="A PR Impact Analysis sticky pull request comment with change summary, verification guidance, and collapsed technical evidence." /></a>
-</p>
-
 ## The problem
 
 AI-assisted “vibe coding” has made it possible to build and deploy more code

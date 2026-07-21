@@ -1,6 +1,9 @@
 const REPOSITORY_URL = "https://github.com/naeemdadi/impact-analysis";
 const README_URL = `${REPOSITORY_URL}#readme`;
 const ARCHITECTURE_URL = `${REPOSITORY_URL}/blob/main/docs/ARCHITECTURE.md`;
+const DEMO_VIDEO_URL = "https://youtu.be/FK4TzBxY6dY";
+const DEMO_PULL_REQUEST_URL =
+  "https://github.com/naeemdadi/rag-chatbot-assistant/pull/6";
 
 /**
  * A public, static product page. It deliberately contains no operational state:
@@ -183,6 +186,7 @@ export function renderLandingPage(): string {
         <div class="nav-links">
           <a href="#how-it-works">How it works</a>
           <a href="#reports">Reports</a>
+          <a href="${DEMO_VIDEO_URL}" target="_blank" rel="noopener noreferrer">Watch demo ↗</a>
           <a class="nav-github" href="${README_URL}" target="_blank" rel="noopener noreferrer">README &amp; setup ↗</a>
         </div>
       </nav>
@@ -196,16 +200,16 @@ export function renderLandingPage(): string {
             <h1 id="hero-heading">Know what to <span class="gradient-text">verify</span> before merging.</h1>
             <p class="lede">PR Impact Analysis traces pull-request changes through your codebase, identifies the routes that can truly be reached, and posts practical verification guidance directly on the PR.</p>
             <div class="hero-actions">
-              <a class="button button-primary" href="#reports">See real reports <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-              <a class="button button-secondary" href="${ARCHITECTURE_URL}" target="_blank" rel="noopener noreferrer">Explore the architecture ↗</a>
+              <a class="button button-primary" href="${DEMO_VIDEO_URL}" target="_blank" rel="noopener noreferrer">Watch the demo video ↗</a>
+              <a class="button button-secondary" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open the live PR comment ↗</a>
             </div>
             <p class="proof"><span><b class="check">✓</b> Deterministic graph evidence</span><span><b class="check">✓</b> GPT-5.6, bounded by source citations</span></p>
           </div>
 
-          <a class="report-window" href="/images/PR-1.png" target="_blank" rel="noopener noreferrer" aria-label="Open a full-size example PR Impact Analysis pull request report">
+          <a class="report-window" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer" aria-label="Open the public demo pull request with the live PR Impact Analysis comment">
             <div class="window-bar" aria-hidden="true"><span class="window-dots"><i></i><i></i><i></i></span><span class="window-pill">github.com · pull request</span></div>
             <img src="/images/PR-1.png" alt="A PR Impact Analysis pull request report showing changes, verification guidance, and technical evidence." />
-            <span class="report-label">A real sticky PR comment ↗</span>
+            <span class="report-label">Open the live sticky PR comment ↗</span>
           </a>
         </section>
 
@@ -268,15 +272,15 @@ export function renderLandingPage(): string {
 
         <section class="demo" aria-labelledby="demo-heading">
           <div>
-            <p class="section-tag">Evidence-first PR review</p>
-            <h2 id="demo-heading">A dependable second set of eyes before merge.</h2>
-            <p>PR Impact Analysis combines deterministic graph evidence with GPT-5.6 guidance. The model receives only bounded, cited PR context and cannot establish impact on its own.</p>
+            <p class="section-tag">Watch it work</p>
+            <h2 id="demo-heading">See the review loop on a real pull request.</h2>
+            <p>Watch the three-minute walkthrough, then inspect the public PR to see the sticky report, source-grounded verification guidance, and evidence map in GitHub.</p>
             <div class="demo-actions">
-              <a class="button button-primary" href="${README_URL}" target="_blank" rel="noopener noreferrer">Read the README &amp; setup guide ↗</a>
-              <a class="button button-secondary" href="${ARCHITECTURE_URL}" target="_blank" rel="noopener noreferrer">Read architecture docs ↗</a>
+              <a class="button button-primary" href="${DEMO_VIDEO_URL}" target="_blank" rel="noopener noreferrer">Watch the demo video ↗</a>
+              <a class="button button-secondary" href="${DEMO_PULL_REQUEST_URL}" target="_blank" rel="noopener noreferrer">Open demo PR #6 ↗</a>
             </div>
           </div>
-          <div class="demo-badge" aria-hidden="true"><em>Graph + AI</em>Evidence<br />first</div>
+          <div class="demo-badge" aria-hidden="true"><em>Live demo</em>Video<br />+ PR</div>
         </section>
       </div>
     </main>

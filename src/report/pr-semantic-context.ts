@@ -407,7 +407,13 @@ function behaviorAnchors(source: ts.SourceFile, file: SourceFile, targetIndex: n
     }
     if (ts.isCallExpression(node)) {
       const name = calledName(node.expression);
+      // Calls such as `items.map(...)` often contain the actual JSX controls
+      // returned to a user. Do not stop traversal at an unrelated helper call,
+      // or navigation and data-driven control lists lose their only observable
+      // interaction anchor. Recognized user-action calls are still bounded by
+      // `add`, then their children are traversed for more precise evidence.
       if (/^(?:open|close|submit|save|create|delete|redirect|push|replace|review)/i.test(name)) add("interaction", `User action ${humanizeIdentifier(name)}`, node);
+      ts.forEachChild(node, visit);
       return;
     }
     if (ts.isReturnStatement(node) && /(?:Response|NextResponse)\.(?:json|redirect)|new Response/.test(node.getText(source))) {
