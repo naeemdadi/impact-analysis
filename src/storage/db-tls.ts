@@ -14,7 +14,7 @@ export function databaseUrlHasTls(url: string): boolean {
 
 export function assertDatabaseTls(url: string, nodeEnv: string | undefined): void {
   if (nodeEnv === "production" && !databaseUrlHasTls(url)) {
-    throw new Error("DATABASE_URL must enable TLS in production (set sslmode=require, verify-ca, verify-full, or no-verify for self-signed certs)");
+    throw new Error("DATABASE_URL must enable TLS in production (set sslmode to require, verify-ca, verify-full, or no-verify, or set ssl=true; no-verify skips certificate validation)");
   }
 }
 
