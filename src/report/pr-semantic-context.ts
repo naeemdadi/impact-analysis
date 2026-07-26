@@ -260,7 +260,7 @@ type DiffOperation = { kind: "equal" | "insert" | "delete"; line: string };
 function myersLineDiff(before: string[], after: string[]): DiffOperation[] {
   const max = before.length + after.length;
   const trace: Array<Map<number, number>> = [];
-  let frontier = new Map<number, number>([[1, 0]]);
+  const frontier = new Map<number, number>([[1, 0]]);
   for (let distance = 0; distance <= max; distance += 1) {
     trace.push(new Map(frontier));
     for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {

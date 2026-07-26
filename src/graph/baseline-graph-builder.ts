@@ -3,7 +3,7 @@ import path from "node:path";
 import * as ts from "typescript";
 
 import { extractAdapterFacts } from "./adapters.js";
-import { discoverProjects, isGraphConfigurationPath, isGraphSourcePath, projectForPath } from "./project-discovery.js";
+import { discoverProjects, isGraphSourcePath, projectForPath } from "./project-discovery.js";
 import type {
   BaselineGraph,
   GraphFile,

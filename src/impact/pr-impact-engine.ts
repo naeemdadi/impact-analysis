@@ -1,5 +1,5 @@
 import { isGraphFilePath } from "../graph/baseline-graph-builder.js";
-import type { BaselineGraph, CommitFileChange, GraphFile, GraphSymbol } from "../graph/types.js";
+import type { BaselineGraph, CommitFileChange, GraphSymbol } from "../graph/types.js";
 import type {
   AffectedItem,
   ChangedFile,
