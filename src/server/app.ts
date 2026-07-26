@@ -25,11 +25,8 @@ export function createApp(): express.Express {
     response.type("html").send(renderLandingPage());
   });
 
-  const githubWebhook = (request: express.Request, response: express.Response): Promise<void> =>
-    handleGithubWebhook(request, response);
-
-  app.post("/webhooks/github", githubWebhook);
-  app.post("/api/github/webhook", githubWebhook);
+  app.post("/webhooks/github", handleGithubWebhook);
+  app.post("/api/github/webhook", handleGithubWebhook);
 
   return app;
 }
