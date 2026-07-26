@@ -15,8 +15,7 @@ const STRICT_TRANSPORT_SECURITY = "max-age=31536000; includeSubDomains";
 
 export function securityHeaders(request: Request, response: Response, next: NextFunction): void {
   response.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
-  // HSTS is ignored by browsers over plain HTTP, so only send it when the
-  // request arrived over TLS, directly or via a terminating proxy.
+  // Browsers ignore HSTS over plain HTTP; only send it on TLS requests.
   if (isSecureRequest(request)) {
     response.setHeader("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY);
   }
