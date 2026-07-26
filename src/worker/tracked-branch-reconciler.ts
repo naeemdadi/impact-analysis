@@ -34,7 +34,11 @@ export async function reconcileTrackedBranchesOnce(): Promise<void> {
 export async function runTrackedBranchReconciler(): Promise<void> {
   log("info", "tracked branch reconciler started");
   while (true) {
-    await reconcileTrackedBranchesOnce();
+    try {
+      await reconcileTrackedBranchesOnce();
+    } catch (error) {
+      log("error", "tracked branch reconciler cycle error", { error: error instanceof Error ? error.message : "unknown error" });
+    }
     await new Promise((resolve) => setTimeout(resolve, 5 * 60_000));
   }
 }

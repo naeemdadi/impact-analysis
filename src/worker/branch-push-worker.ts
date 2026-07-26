@@ -6,6 +6,7 @@ import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repos
 import { log } from "../server/logger.js";
 import { enqueueBranchReconciliation } from "../queue/reconciliation-queue.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
+import { runWorkerLoop } from "./worker-loop.js";
 
 const pushPayloadSchema = z.object({
   repoId: z.number(),
@@ -47,11 +48,5 @@ export async function processNextBranchPushJob(): Promise<boolean> {
 
 export async function runBranchPushWorker(): Promise<void> {
   log("info", "branch push worker started");
-  while (true) {
-    if (!await processNextBranchPushJob()) await wait(1_000);
-  }
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await runWorkerLoop("branch.push", processNextBranchPushJob);
 }

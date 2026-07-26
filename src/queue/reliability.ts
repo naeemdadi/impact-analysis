@@ -11,11 +11,21 @@ export function classifyJobError(error: unknown): JobErrorKind {
   if (error instanceof JobCancelledError) return "cancelled";
   const status = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : null;
   if (status === 429 || (status !== null && status >= 500)) return "transient";
+  // GitHub returns 403 for primary and secondary rate limits; those are retryable.
+  if (status === 403 && isRateLimited(error)) return "transient";
   const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
   if (["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN"].includes(code)) return "transient";
   const message = error instanceof Error ? error.message : "";
   if (/network|connection|socket|database.*(unavailable|timeout)|timeout/i.test(message)) return "transient";
   return "permanent";
+}
+
+function isRateLimited(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  if (/rate limit|abuse detection/i.test(message)) return true;
+  const headers = error instanceof Object && "response" in error && (error as { response?: { headers?: Record<string, unknown> } }).response?.headers;
+  if (!headers) return false;
+  return String(headers["x-ratelimit-remaining"]) === "0" || headers["retry-after"] != null;
 }
 
 export class JobTimeoutError extends Error {

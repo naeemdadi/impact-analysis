@@ -2,9 +2,10 @@ import { z } from "zod";
 
 import { buildAndPersistBaselineGraph } from "../graph/build-baseline.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
-import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, renewJobLease, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
+import { runWorkerLoop } from "./worker-loop.js";
 
 const installationSyncPayloadSchema = z.object({
   installationId: z.number(),
@@ -31,6 +32,8 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
 
     const repositoryReader = new GitHubRepositoryReader();
     for (const repoId of payload.repositoryIds) {
+      // Renew per repo so a multi-repo sync cannot outlive its lease and be reaped.
+      await renewJobLease(job);
       const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildAndPersistBaselineGraph(
         { repoId, reuseReadySnapshot: true }, repositoryReader,
       ));
@@ -56,12 +59,5 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
 
 export async function runInstallationSyncWorker(): Promise<void> {
   log("info", "installation sync worker started");
-  while (true) {
-    const processed = await processNextInstallationSyncJob();
-    if (!processed) await wait(1_000);
-  }
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await runWorkerLoop("installation.sync", processNextInstallationSyncJob);
 }

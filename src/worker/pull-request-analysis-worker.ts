@@ -8,9 +8,10 @@ import { ensureImpactAssessment, findImpactAssessment } from "../impact/pr-impac
 import { ensurePrReport } from "../report/report-service.js";
 import { enqueuePullRequestDelivery } from "../delivery/pr-comment-delivery-queue.js";
 import { requestPrCommentDelivery } from "../delivery/pr-comment-delivery-repository.js";
-import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
+import { claimNextJob, completeJob, renewJobLease, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
+import { runWorkerLoop } from "./worker-loop.js";
 
 const pullRequestPayloadSchema = z.object({
   repoId: z.number(),
@@ -41,9 +42,11 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
         const artifacts = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactArtifacts(parsed, new GitHubRepositoryReader()));
         await ensureImpactAssessment(await getPrAnalysisId(parsed), assessImpact(existing, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
       }
+      await renewJobLease(job);
       const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(existing, undefined, new GitHubRepositoryReader()));
       await schedulePullRequestCommentDelivery({
         deliveryId: job.deliveryId,
+        sequence: job.id,
         repoId: payload.repoId,
         pullRequestNumber: payload.pullRequestNumber,
         analysisId: await getPrAnalysisId(payload),
@@ -62,6 +65,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     // report, which is scheduled durably below.
     await schedulePullRequestCommentDelivery({
       deliveryId: job.deliveryId,
+      sequence: job.id,
       repoId: payload.repoId,
       pullRequestNumber: payload.pullRequestNumber,
       analysisId,
@@ -73,12 +77,14 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     await persistPrAnalysis(result);
     analysisPersisted = true;
     await ensureImpactAssessment(analysisId, assessImpact(result, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
+    await renewJobLease(job);
     const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(result, undefined, new GitHubRepositoryReader()));
     // A ready report is not complete until its sticky-comment delivery has
     // been durably queued. Let queue errors retry this job rather than silently
     // leaving a running comment behind.
     await schedulePullRequestCommentDelivery({
       deliveryId: job.deliveryId,
+      sequence: job.id,
       repoId: payload.repoId,
       pullRequestNumber: payload.pullRequestNumber,
       analysisId,
@@ -103,6 +109,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
       await failPrAnalysis(payload, message);
       await schedulePullRequestCommentDelivery({
         deliveryId: job.deliveryId,
+        sequence: job.id,
         repoId: payload.repoId,
         pullRequestNumber: payload.pullRequestNumber,
         analysisId: await getPrAnalysisId(payload),
@@ -123,6 +130,7 @@ async function schedulePullRequestCommentDelivery(input: {
   analysisId: string;
   headSha: string;
   deliveryState: "running" | "ready" | "failed";
+  sequence: number;
 }): Promise<void> {
   try {
     await requestPrCommentDelivery({
@@ -131,6 +139,7 @@ async function schedulePullRequestCommentDelivery(input: {
       analysisId: input.analysisId,
       headSha: input.headSha,
       deliveryState: input.deliveryState,
+      sequence: input.sequence,
     });
     await enqueuePullRequestDelivery({ ...input, prAnalysisId: input.analysisId });
     log("info", "pull request comment delivery scheduled", {
@@ -153,11 +162,5 @@ async function schedulePullRequestCommentDelivery(input: {
 
 export async function runPullRequestAnalysisWorker(): Promise<void> {
   log("info", "pull request analysis worker started");
-  while (true) {
-    if (!await processNextPullRequestAnalysisJob()) await wait(1_000);
-  }
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await runWorkerLoop("pull_request.analyze", processNextPullRequestAnalysisJob);
 }

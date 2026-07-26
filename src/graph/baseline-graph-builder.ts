@@ -79,6 +79,10 @@ export function buildGraphForFiles(source: RepositorySource, pathsToAnalyze: str
   return graph;
 }
 
+// Non-fatal tsconfig diagnostics: 18003 = no inputs; 5083/6053 = an `extends`
+// preset outside the fetched tree. Use partial options, don't fail the repo.
+const IGNORED_CONFIG_DIAGNOSTICS = new Set([18003, 5083, 6053]);
+
 function compilerOptionsFor(project: ProjectDescriptor, loadedFiles: Map<string, SourceFile>, filesByVirtualPath: Map<string, SourceFile>): ts.CompilerOptions {
   const config = project.configPath ? loadedFiles.get(project.configPath) : undefined;
   if (!config) return { allowJs: true, checkJs: false, jsx: ts.JsxEmit.Preserve, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, resolveJsonModule: true, baseUrl: toVirtualPath(project.rootPath) };
@@ -92,7 +96,7 @@ function compilerOptionsFor(project: ProjectDescriptor, loadedFiles: Map<string,
     readFile: (fileName) => filesByVirtualPath.get(normalizeVirtualPath(fileName))?.content,
   };
   const result = ts.parseJsonConfigFileContent(parsed.config, host, projectRoot, undefined, toVirtualPath(config.path));
-  const fatal = result.errors.filter((diagnostic) => diagnostic.code !== 18003);
+  const fatal = result.errors.filter((diagnostic) => !IGNORED_CONFIG_DIAGNOSTICS.has(diagnostic.code));
   if (fatal.length > 0) throw new UnsupportedRepositoryError(`${config.path} is invalid: ${ts.flattenDiagnosticMessageText(fatal[0].messageText, "\n")}`);
   return { allowJs: true, checkJs: false, jsx: ts.JsxEmit.Preserve, ...result.options };
 }

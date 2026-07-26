@@ -3,6 +3,7 @@ import { z } from "zod";
 import { GitHubPullRequestCommentWriter } from "../github/pull-request-comment-writer.js";
 import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
+import { runWorkerLoop } from "./worker-loop.js";
 import { markPrCommentDeliveryFailed } from "../delivery/pr-comment-delivery-repository.js";
 import { deliverPullRequestComment } from "../delivery/pr-comment-delivery-service.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
@@ -45,5 +46,5 @@ export async function processNextPullRequestDeliveryJob(): Promise<boolean> {
 
 export async function runPullRequestDeliveryWorker(): Promise<void> {
   log("info", "pull request delivery worker started");
-  while (true) if (!await processNextPullRequestDeliveryJob()) await new Promise((resolve) => setTimeout(resolve, 1_000));
+  await runWorkerLoop("pull_request.deliver", processNextPullRequestDeliveryJob);
 }

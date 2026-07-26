@@ -11,7 +11,12 @@ test("retry policy is bounded and uses the documented backoff", () => {
   assert.equal(retryDelayMs(2), 120_000);
   assert.equal(classifyJobError({ status: 429 }), "transient");
   assert.equal(classifyJobError({ status: 503 }), "transient");
+  // A plain 403 is permanent, but a 403 rate limit (by message or header) retries.
   assert.equal(classifyJobError({ status: 403 }), "permanent");
+  assert.equal(classifyJobError(Object.assign(new Error("Resource not accessible by integration"), { status: 403 })), "permanent");
+  assert.equal(classifyJobError(Object.assign(new Error("API rate limit exceeded"), { status: 403 })), "transient");
+  assert.equal(classifyJobError(Object.assign(new Error("You have exceeded a secondary rate limit"), { status: 403 })), "transient");
+  assert.equal(classifyJobError({ status: 403, response: { headers: { "x-ratelimit-remaining": "0" } } }), "transient");
 });
 
 test("technical roles suppress analytics while promoting application logic", () => {

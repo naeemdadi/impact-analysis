@@ -28,6 +28,16 @@ export async function completeJob(job: ClaimedJob): Promise<void> {
   log("info", "queue job completed", { jobId: job.id });
 }
 
+// Best-effort lease extension for long jobs. Swallows failures so a renewal blip
+// never discards a good build; the status+leaseToken guard still protects it.
+export async function renewJobLease(job: ClaimedJob): Promise<void> {
+  try {
+    await db.update(jobQueueEnqueuedTable).set({ leaseExpiresAt: new Date(Date.now() + leaseMs) }).where(and(eq(jobQueueEnqueuedTable.id, job.id), eq(jobQueueEnqueuedTable.status, "running"), eq(jobQueueEnqueuedTable.leaseToken, job.leaseToken)));
+  } catch (error) {
+    log("warn", "job lease renewal failed", { jobId: job.id, error: error instanceof Error ? error.message : "unknown error" });
+  }
+}
+
 export async function retryOrFailJob(job: ClaimedJob, error: unknown): Promise<{ retried: boolean; errorKind: JobErrorKind }> {
   // Raw error text; scrub before rendering it in any operator UI.
   const message = error instanceof Error ? error.message : "worker error";

@@ -57,9 +57,21 @@ export async function persistReadySnapshot(input: {
   const unresolvedImportCount = graph.imports.filter((entry) => entry.resolutionStatus === "unresolved").length;
   await db.transaction(async (transaction) => {
     await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.repoId}:${input.branch}`}))`);
-    const current = await transaction.select({ id: graphSnapshotTable.id }).from(graphSnapshotTable).where(and(
+    const current = await transaction.select({ id: graphSnapshotTable.id, createdAt: graphSnapshotTable.createdAt }).from(graphSnapshotTable).where(and(
       eq(graphSnapshotTable.repoId, input.repoId), eq(graphSnapshotTable.branch, input.branch), eq(graphSnapshotTable.isCurrent, true),
     )).limit(1).for("update");
+
+    // Monotonicity: a slow build for an older commit must not replace a newer
+    // current graph. Ordered by createdAt; a stale build stays ready-not-current.
+    const incoming = await transaction.select({ createdAt: graphSnapshotTable.createdAt }).from(graphSnapshotTable).where(eq(graphSnapshotTable.id, input.snapshotId)).limit(1);
+    if (current.length > 0 && incoming[0] && current[0].createdAt > incoming[0].createdAt) {
+      await transaction.update(graphSnapshotTable).set({
+        status: "ready", isCurrent: false, projectCount: graph.projects.length, entrypointCount: graph.entrypoints.length,
+        protocolBindingCount: graph.protocolBindings.length, fileCount: graph.files.length, symbolCount: graph.symbols.length,
+        importCount: graph.imports.length, unresolvedImportCount, buildDurationMs: input.buildDurationMs, completedAt: new Date(),
+      }).where(eq(graphSnapshotTable.id, input.snapshotId));
+      return;
+    }
 
     if (current.length > 0) {
       // Move current mutable rows to the incoming identity before replacement.

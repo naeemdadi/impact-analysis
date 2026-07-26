@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "../storage/db.js";
 import { prCommentDeliveryTable } from "../storage/schema.js";
@@ -50,15 +50,16 @@ export async function requestPrCommentDelivery(input: {
   analysisId: string;
   headSha: string;
   deliveryState: "running" | "ready" | "failed";
+  sequence: number;
 }): Promise<void> {
-  // This is one atomic row update. It must never wait on the session lock used
-  // for an external GitHub write; otherwise a ready report can be stranded
-  // behind an older running-comment delivery.
+  // One atomic upsert that must not wait on the GitHub-write session lock. The
+  // sequence fence keeps desired state from regressing to an older enqueue order.
   await db.insert(prCommentDeliveryTable).values({
     repoId: input.repoId,
     pullRequestNumber: input.pullRequestNumber,
     desiredAnalysisId: input.analysisId,
     desiredHeadSha: input.headSha,
+    desiredSequence: input.sequence,
     desiredState: input.deliveryState,
     status: "pending",
     lastError: null,
@@ -67,11 +68,13 @@ export async function requestPrCommentDelivery(input: {
     set: {
       desiredAnalysisId: input.analysisId,
       desiredHeadSha: input.headSha,
+      desiredSequence: input.sequence,
       desiredState: input.deliveryState,
       status: "pending",
       lastError: null,
       updatedAt: new Date(),
     },
+    where: sql`${prCommentDeliveryTable.desiredSequence} is null or excluded.desired_sequence >= ${prCommentDeliveryTable.desiredSequence}`,
   });
 }
 

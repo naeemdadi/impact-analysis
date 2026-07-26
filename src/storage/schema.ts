@@ -341,6 +341,9 @@ export const prCommentDeliveryTable = pgTable(
     // Newest analysis selected for delivery; older queued jobs must not overwrite it.
     desiredAnalysisId: uuid("desired_analysis_id").references(() => prAnalysisTable.id),
     desiredHeadSha: text("desired_head_sha").notNull(),
+    // Enqueue order (analyze job bigserial id) of the desired analysis, so a
+    // force-push to a prior SHA wins while a stale retry of an older job loses.
+    desiredSequence: bigint("desired_sequence", { mode: "number" }),
     // The requested comment representation for the desired analysis. A running
     // comment and its ready report share an analysis/SHA, so the state is part
     // of the delivery identity rather than merely a display detail.

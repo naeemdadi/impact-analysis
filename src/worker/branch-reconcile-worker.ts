@@ -4,6 +4,7 @@ import { buildAndPersistBaselineGraph } from "../graph/build-baseline.js";
 import { GitHubRepositoryReader } from "../graph/github-repository-reader.js";
 import { claimNextJob, completeJob, retryOrFailJob } from "../queue/worker-repository.js";
 import { log } from "../server/logger.js";
+import { runWorkerLoop } from "./worker-loop.js";
 import { runWithDeadline, timeoutForJob } from "../queue/reliability.js";
 
 const payloadSchema = z.object({ repoId: z.number(), branch: z.string(), sha: z.string(), reason: z.string() });
@@ -25,5 +26,5 @@ export async function processNextBranchReconcileJob(): Promise<boolean> {
 
 export async function runBranchReconcileWorker(): Promise<void> {
   log("info", "branch reconciliation worker started");
-  while (true) if (!await processNextBranchReconcileJob()) await new Promise((resolve) => setTimeout(resolve, 1_000));
+  await runWorkerLoop("branch.reconcile", processNextBranchReconcileJob);
 }
