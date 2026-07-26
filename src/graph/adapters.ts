@@ -1,4 +1,3 @@
-import path from "node:path";
 import * as ts from "typescript";
 
 import type {
@@ -151,7 +150,6 @@ function extractExpressEntrypoints(project: ProjectDescriptor, files: Map<string
     };
     visit(source);
     for (const { call, expression } of calls) {
-      const receiver = expression.expression.getText(source);
       const method = expression.name.text.toLowerCase();
       if (method !== "use" || call.arguments.length < 2 || !ts.isStringLiteral(call.arguments[0]) || !ts.isIdentifier(call.arguments[1])) continue;
       prefixes.set(call.arguments[1].text, call.arguments[0].text);
@@ -249,7 +247,7 @@ function collectTrpcProcedures(object: ts.ObjectLiteralExpression, source: ts.So
   }
 }
 
-function containsProcedureTerminal(node: ts.Node, source: ts.SourceFile): boolean {
+function containsProcedureTerminal(node: ts.Node, _source: ts.SourceFile): boolean {
   let found = false;
   const visit = (candidate: ts.Node): void => {
     if (ts.isPropertyAccessExpression(candidate) && ["query", "mutation", "subscription"].includes(candidate.name.text)) found = true;

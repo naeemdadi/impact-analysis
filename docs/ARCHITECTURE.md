@@ -301,6 +301,16 @@ recreated and its mutable pointer repaired.
 - Repository-level AI assistance can be disabled. When disabled, no PR source
   is sent to OpenAI and the deterministic fallback remains available.
 
+### Accepted risks and operational notes
+
+- Rate limiting is expected at the deployment edge, not in the app. The webhook
+  endpoint is signature-gated; unauthenticated requests cannot trigger work.
+- Job `last_error` holds raw error text for debugging, never returned to users.
+  Scrub it before any future operator UI or API renders it.
+- Replay protection rests on the idempotency table (by delivery ID), not on
+  signature freshness. Add a freshness window if state-changing webhook actions
+  are added later.
+
 ## Known boundaries and next production decisions
 
 - One tracked branch per repository is intentional for this release.

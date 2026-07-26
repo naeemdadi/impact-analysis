@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, lte, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 
 import { db } from "../storage/db.js";
@@ -29,6 +29,7 @@ export async function completeJob(job: ClaimedJob): Promise<void> {
 }
 
 export async function retryOrFailJob(job: ClaimedJob, error: unknown): Promise<{ retried: boolean; errorKind: JobErrorKind }> {
+  // Raw error text; scrub before rendering it in any operator UI.
   const message = error instanceof Error ? error.message : "worker error";
   const errorKind = classifyJobError(error);
   const retry = errorKind === "transient" || errorKind === "timeout";
