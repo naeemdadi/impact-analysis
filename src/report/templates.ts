@@ -88,7 +88,7 @@ function pageDisplayName(item: ImpactAssessmentItem, input?: PrSemanticInput): s
 }
 
 function humanizeRouteSegment(segment: string): string {
-  return humanizeIdentifier(segment.replace(/[\[\]]/g, "").replace(/([a-z])([A-Z])/g, "$1 $2"))
+  return humanizeIdentifier(segment.replace(/[[\]]/g, "").replace(/([a-z])([A-Z])/g, "$1 $2"))
     .replace(/\bId\b/g, "ID")
     .replace(/\bApi\b/g, "API");
 }

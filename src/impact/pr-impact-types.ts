@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CommitFileChange, GraphFileKind, GraphSymbol } from "../graph/types.js";
+import type { CommitFileChange, GraphSymbol } from "../graph/types.js";
 
 export interface PullRequestAnalysisRequest {
   repoId: number;
