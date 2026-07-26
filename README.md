@@ -131,6 +131,23 @@ changed hunks and exact route context. Strict structured output and local
 validation ensure that the model can summarize supplied changes and phrase
 verification checks, but can never establish reachability itself.
 
+### Data sent to OpenAI, and how to turn it off
+
+Only when a repository has AI assistance enabled and a PR reaches a prioritized
+target, one request sends that PR's selected changed hunks and route context. It
+never includes a whole repository, secrets, lockfiles, dependencies or database
+source (see [bounded PR semantic analysis](docs/ARCHITECTURE.md#bounded-pr-semantic-analysis)).
+
+Assistance is on by default (opt-out), since the deterministic report is weaker
+without it. Disable it per repository at any time:
+
+```sh
+pnpm set-ai-assistance -- <repoId> false
+```
+
+Operators sending private source should confirm their OpenAI account keeps
+prompts out of training and, where available, use a zero-retention agreement.
+
 ## Try it
 
 The deployed service hosts a product overview and real report examples at
