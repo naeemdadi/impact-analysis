@@ -31,7 +31,7 @@ export interface ProjectDescriptor {
   reason: string | null;
 }
 
-export interface GraphProject extends ProjectDescriptor {}
+export type GraphProject = ProjectDescriptor;
 
 export interface RepositorySource {
   repoId: number;
