@@ -74,7 +74,10 @@ export async function requestPrCommentDelivery(input: {
       lastError: null,
       updatedAt: new Date(),
     },
-    where: sql`${prCommentDeliveryTable.desiredSequence} is null or excluded.desired_sequence >= ${prCommentDeliveryTable.desiredSequence}`,
+    where: sql`${prCommentDeliveryTable.desiredSequence} is null
+      or excluded.desired_sequence > ${prCommentDeliveryTable.desiredSequence}
+      or (excluded.desired_sequence = ${prCommentDeliveryTable.desiredSequence}
+        and (excluded.desired_state <> 'running' or ${prCommentDeliveryTable.desiredState} = 'running'))`,
   });
 }
 

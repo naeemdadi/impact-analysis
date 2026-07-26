@@ -51,6 +51,16 @@ test("a tsconfig extending a preset outside the tree still builds instead of fai
   assert.ok(graph.entrypoints?.some((entrypoint) => entrypoint.routePath === "/"));
 });
 
+test("a tsconfig extending a missing local base still builds instead of failing the whole repo", () => {
+  const graph = buildBaselineGraph(source({
+    "package.json": JSON.stringify({ name: "app", dependencies: { next: "1" } }),
+    "tsconfig.json": JSON.stringify({ extends: "./config/base.json", compilerOptions: { jsx: "preserve" } }),
+    "app/page.tsx": "export default function Page() { return <p>Home</p>; }",
+  }));
+
+  assert.ok(graph.entrypoints?.some((entrypoint) => entrypoint.routePath === "/"));
+});
+
 test("extracts Remix, Express, and statically proven tRPC facts", () => {
   const graph = buildBaselineGraph(source({
     "package.json": JSON.stringify({ private: true, workspaces: ["apps/*", "packages/*"] }),

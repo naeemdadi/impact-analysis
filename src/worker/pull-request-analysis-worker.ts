@@ -42,7 +42,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
         const artifacts = await runWithDeadline(timeoutForJob(job.jobType), async () => buildPullRequestImpactArtifacts(parsed, new GitHubRepositoryReader()));
         await ensureImpactAssessment(await getPrAnalysisId(parsed), assessImpact(existing, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
       }
-      await renewJobLease(job);
+      if (!(await renewJobLease(job))) return true;
       const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(existing, undefined, new GitHubRepositoryReader()));
       await schedulePullRequestCommentDelivery({
         deliveryId: job.deliveryId,
@@ -77,7 +77,7 @@ export async function processNextPullRequestAnalysisJob(): Promise<boolean> {
     await persistPrAnalysis(result);
     analysisPersisted = true;
     await ensureImpactAssessment(analysisId, assessImpact(result, artifacts.baseGraph && artifacts.headGraph ? { baseGraph: artifacts.baseGraph, headGraph: artifacts.headGraph } : null));
-    await renewJobLease(job);
+    if (!(await renewJobLease(job))) return true;
     const report = await runWithDeadline(timeoutForJob(job.jobType), async () => ensurePrReport(result, undefined, new GitHubRepositoryReader()));
     // A ready report is not complete until its sticky-comment delivery has
     // been durably queued. Let queue errors retry this job rather than silently

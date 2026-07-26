@@ -32,8 +32,8 @@ export async function processNextInstallationSyncJob(): Promise<boolean> {
 
     const repositoryReader = new GitHubRepositoryReader();
     for (const repoId of payload.repositoryIds) {
-      // Renew per repo so a multi-repo sync cannot outlive its lease and be reaped.
-      await renewJobLease(job);
+      // Renew per repo; abandon to the reclaiming worker if the lease was lost.
+      if (!(await renewJobLease(job))) return true;
       const result = await runWithDeadline(timeoutForJob(job.jobType), async () => buildAndPersistBaselineGraph(
         { repoId, reuseReadySnapshot: true }, repositoryReader,
       ));
