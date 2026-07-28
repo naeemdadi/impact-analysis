@@ -94,7 +94,7 @@ Every indexable JS/TS project contributes framework-neutral facts:
 - static, dynamic, type-only, stylesheet, external, unresolved, and asset
   imports;
 - local and workspace-package import resolution;
-- reverse resolved file-import traversal; and
+- resolved file-import edges that later support reverse traversal; and
 - a conservative technical role with a reason and classification strength.
 
 External packages never become graph files and `node_modules` is never fetched.
@@ -135,6 +135,58 @@ Ambiguous product code defaults to `application`, not a guessed business
 category such as “pricing” or “payments.” This avoids suppressing potentially
 important product changes based on naming alone.
 
+### Graph construction
+
+Every graph is built from an exact commit SHA tree. The builder never invents
+files, edges or entrypoints that the retrieved source cannot support.
+
+```mermaid
+flowchart TD
+  S[Exact SHA source tree] --> D[Discover projects]
+  D --> P[Parse each selected module]
+  P --> I[Resolve import specifiers]
+  I --> R[Classify kind and technical role]
+  R --> A[Run framework and protocol adapters]
+  A --> G[BaselineGraph facts]
+```
+
+For a full baseline build the selected set is every indexable JS/TS path. For an
+incremental or PR-head build the selected set is only the reanalysis frontier
+described below. In both cases resolution still uses the full target tree so
+new or renamed files can become real targets.
+
+Per selected module the builder:
+
+1. Parses the file with the TypeScript AST (or stylesheet import extraction for
+   CSS-family files).
+2. Records top-level symbols with content hashes used later for PR symbol diffs.
+3. Collects static, dynamic, `require`, type-only, stylesheet and re-export
+   import specifiers.
+4. Resolves each specifier with the project’s `tsconfig`/`jsconfig` options
+   (paths, baseUrl, workspace package names and local extension candidates)
+   against the retrieved repository tree only.
+5. Marks the edge `resolved`, `external`, `asset` or `unresolved`. External
+   packages and assets never become graph files. Unresolved edges stay
+   explicit.
+6. Assigns a file kind and technical role from path conventions and symbol
+   shape.
+
+Adapters then add entrypoints and protocol bindings only where static proof
+exists. Route truth lives in `graph.entrypoints`. A compatibility projection
+still mirrors proven routes onto the backing file’s display kind for older
+readers.
+
+Incremental construction reuses retained facts and rebuilds only a frontier:
+
+- every added, modified or renamed graph-relevant path at the target SHA;
+- every previous importer of a changed, removed or renamed path; and
+- every previously unresolved importer when adds or renames may newly resolve.
+
+Configuration-path changes and repositories with tRPC protocol profiles force a
+full exact-SHA rebuild because binding topology cannot be safely patched from
+the frontier alone. Incomplete GitHub compare evidence also refuses incremental
+work and surfaces insufficient evidence instead of a guessed graph.
+
 ## Graph lifecycle
 
 ### Installation and tracked branch
@@ -170,6 +222,44 @@ Only PRs targeting the configured tracked branch are analyzed. The PR worker:
 An import path proves file-to-file dependency, not that an importer consumes a
 specific symbol. The report uses neutral wording unless an AST anchor can prove
 a stronger relationship such as a component render or a bound call site.
+
+### Impact traversal
+
+Blast radius is computed after both exact graphs exist. Symbols explain what
+changed inside a file. Traversal follows only persisted file-import edges and
+proven protocol bindings.
+
+```mermaid
+flowchart TD
+  C[Changed graph-relevant files] --> H[Seed on PR-head graph]
+  C --> B[Removed files seed on base graph]
+  H --> V[Reverse BFS over resolved dependents]
+  B --> V
+  P[Proven protocol bindings] --> V
+  V --> E[Collect proven entrypoints and product kinds]
+  E --> F[Keep shortest direct-preferring path per identity]
+```
+
+The walk:
+
+1. Seeds from every graph-relevant changed path present in the PR-head graph.
+2. Also seeds removals from the base graph, because a deleted module has no
+   head node while its old reverse edges remain valid evidence.
+3. Builds a dependents index from imports with `resolutionStatus ===
+   "resolved"` plus proven protocol bindings (handler → caller).
+4. Breadth-first walks reverse dependents. Each visited file that owns a proven
+   entrypoint becomes an affected page or API. Files with product kinds but no
+   proven entrypoint remain affected as components or shared modules.
+5. Records every supporting dependency path. The selected path prefers direct
+   over indirect, then shorter resolved chains, then stable lexical order.
+
+Unresolved and external edges never extend the frontier. Policy and AI layers
+cannot add reachability: they only change prominence or phrase checks for
+already-ranked Primary/Secondary targets.
+
+This keeps blast radius auditable and reproducible. It does not claim
+symbol-level use, dynamic routing, runtime traces or exhaustive workflows. A
+false negative is preferred over fabricating an edge the source cannot prove.
 
 ## Prioritization policy
 
